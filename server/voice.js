@@ -227,10 +227,12 @@ async function transcribe(audio, { lang = '', type = 'audio/wav' } = {}) {
 }
 const sttStatus = () => ({ ready: sttReady(), model: sttModel, error: sttError });
 
+// 'premium' = your ElevenLabs voices (better than any browser voice), 'basic' = built-in/backup voices, false = none
+const ttsMode = () => !enabled() ? false : hasEleven() && !(libraryBlocked.key === process.env.ELEVENLABS_API_KEY && Date.now() - libraryBlocked.at < 3600e3) ? 'premium' : 'basic';
 const status = () => ({ enabled: enabled(), provider: lastProvider, azure: hasAzure(), elevenlabs: hasEleven(), gemini: hasGemini(), voices: elevenVoices.count || null,
   stt: sttStatus(), builtInOnly: libraryBlocked.key === process.env.ELEVENLABS_API_KEY && Date.now() - libraryBlocked.at < 3600e3, lastError });
 
 // Forget cached voice choices (e.g. right after upgrading the ElevenLabs plan) so the next clip re-checks.
 function refresh() { sttFailAt = 0; sttError = null; elevenVoices = { key: null, at: 0, map: {} }; libraryBlocked = { key: null, at: 0 }; }
 
-module.exports = { transcribe, sttReady, sttStatus, synthesize, speakInChunks, clips, enabled, status, refresh };
+module.exports = { ttsMode, transcribe, sttReady, sttStatus, synthesize, speakInChunks, clips, enabled, status, refresh };

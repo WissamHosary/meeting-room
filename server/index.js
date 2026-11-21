@@ -170,7 +170,7 @@ app.patch('/api/tasks/:id', owner, (req, res) => {
   if (!wasDone && t.status === 'done') { // the agent tells you once, when they finish
     const a = team.find((x) => x.id === t.agent);
     const c = store.db.clients.find((x) => x.id === t.client);
-    const msg = { id: store.id('o'), who: a.id, name: a.name, kind: 'done', tts: voice.enabled(), text: `Wissam, I just finished "${t.title}"${c ? ` for ${c.name}` : ''}.`, at: now() };
+    const msg = { id: store.id('o'), who: a.id, name: a.name, kind: 'done', tts: voice.ttsMode(), text: `Wissam, I just finished "${t.title}"${c ? ` for ${c.name}` : ''}.`, at: now() };
     store.db.office.push(msg); store.save(); io.to('office').emit('office:msg', msg);
     if (msg.tts) voice.speakInChunks(msg.text, a.id, (index, total, audio) => io.to('office').emit('office:audio', { msgId: msg.id, index, total, audio }));
   }
@@ -260,7 +260,7 @@ function agentAnswer(m, agentId, text, speaker, isOwner, depth, broughtBy = null
     const r = await brain.respond({ agentId, text, mode: 'meeting', clientId: m.client, meeting: m, history: depth ? history : history.slice(0, -1), speaker, isOwner, onEarly: ev.onEarly, broughtBy });
     io.to(room).emit('agent:typing', { agentId, on: false });
     const a = team.find((x) => x.id === agentId);
-    const out = { id: lineId, name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
+    const out = { id: lineId, name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, tts: voice.ttsMode(), at: now() };
     m.transcript.push(out); store.save(); io.to(room).emit('meet:line', out);
     ev.finish(out.text);
     if (r.actions?.some((x) => x.type === 'task' || x.type === 'status')) io.to('office').emit('tasks:changed');
@@ -302,7 +302,7 @@ io.on('connection', (socket) => {
         const ev = earlyVoice(agentId, (index, total, audio) => io.to('office').emit('office:audio', { msgId, index, total, audio }));
         const r = await brain.respond({ agentId, text, mode: 'office', history, isOwner: true, interrupted: cut && cut.agent === agentId ? cut.said : null, onEarly: ev.onEarly });
         io.to('office').emit('agent:typing', { agentId, on: false });
-        const out = { id: msgId, who: agentId, name: team.find((a) => a.id === agentId).name, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
+        const out = { id: msgId, who: agentId, name: team.find((a) => a.id === agentId).name, text: r.text, links: r.links, tts: voice.ttsMode(), at: now() };
         store.db.office.push(out); store.save();
         io.to('office').emit('office:msg', out);
         ev.finish(out.text);

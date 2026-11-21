@@ -73,15 +73,26 @@
   }
   // Server-generated voices (work in every browser): played one after another.
   const audioQueue = []; let playing = null;
+  const player = new Audio(); player.preload = 'auto'; player.setAttribute('playsinline', '');
+  const liveContexts = new Set();
+  function newAudioContext() { const C = window.AudioContext || window.webkitAudioContext; const c = new C(); liveContexts.add(c); c.addEventListener?.('statechange', () => { if (c.state === 'closed') liveContexts.delete(c); }); return c; }
+  let unlocked = false;
+  const unlock = () => {
+    for (const c of liveContexts) if (c.state === 'suspended') c.resume().catch(() => {});
+    if (unlocked || playing) return; unlocked = true;
+    player.muted = true; player.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+    player.play().then(() => { player.pause(); player.muted = false; }).catch(() => { player.muted = false; unlocked = false; });
+  };
+  ['pointerdown', 'keydown', 'touchend'].forEach((ev) => addEventListener(ev, unlock, { capture: true, passive: true }));
   function playClip(url, agent) {
     return new Promise((resolve) => { audioQueue.push({ url, agent, resolve }); pump(); });
   }
   function pump() {
     if (playing || !audioQueue.length) return;
     const it = audioQueue.shift();
-    const a = new Audio(it.url); playing = a; a.volume = ducked ? 0.25 : 1;
+    const a = player; a.muted = false; a.src = it.url; playing = a; a.volume = ducked ? 0.25 : 1;
     let finished = false;
-    const done = () => { if (finished) return; finished = true; if (playing === a) playing = null; speakListeners.forEach((f) => f(it.agent.id, false)); it.resolve(); pump(); };
+    const done = () => { if (finished) return; finished = true; a.onplay = a.onended = a.onerror = null; if (playing === a) playing = null; speakListeners.forEach((f) => f(it.agent.id, false)); it.resolve(); pump(); };
     a.onplay = () => speakListeners.forEach((f) => f(it.agent.id, true));
     a.onended = done; a.onerror = done; a._done = done;
     a.play().catch(() => { done(); toast('Tap anywhere on the page once to turn on the team’s sound.', 4000); });
@@ -133,9 +144,19 @@
     }[code] || `Voice recognition error: ${code}`;
   }
   // Push-to-talk: listen for one sentence, resolve with the text ('' if nothing was heard).
-  function listenOnce({ lang = 'en-US', onInterim } = {}) {
+  function listenOnce({ lang = 'en-US', onInterim, cloud = false, meetingId = '' } = {}) {
+    if (cloud) return new Promise((resolve) => { // ElevenLabs Scribe: works in every browser
+      let text = '', done = false, flushed = false;
+      const finish = () => { if (done) return; done = true; clearTimeout(timer); ear.off(); resolve(text.trim()); };
+      const ear = cloudEar({ getLang: () => lang, meetingId, onSpeech: () => onInterim?.('…'),
+        onBusy: (b) => { if (b) onInterim?.('Understanding…'); else finish(); },
+        onFinal: (t) => { text += ' ' + t; onInterim?.(text.trim()); }, onFail: finish, onDrop: () => { if (flushed) finish(); } });
+      const timer = setTimeout(() => { if (!ear.flush()) finish(); }, 20000);
+      listenOnce.stop = () => { flushed = true; if (!ear.flush()) finish(); };
+      ear.on();
+    });
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return Promise.reject(new Error('Voice needs Chrome or Edge (or Safari on iPhone)'));
+    if (!SR) return Promise.reject(new Error("This browser can't turn speech into text by itself. Type instead, or the owner can turn on ElevenLabs hearing."));
     return new Promise((resolve, reject) => {
       const rec = new SR(); rec.lang = lang; rec.continuous = false; rec.interimResults = true; rec.maxAlternatives = 1;
       let finalText = '', last = '';
@@ -220,7 +241,7 @@
       try {
         if (!stream) own = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         const s = stream || own;
-        actx = new AudioContext(); await actx.resume().catch(() => {});
+        actx = newAudioContext(); await actx.resume().catch(() => {});
         src = actx.createMediaStreamSource(new MediaStream(s.getAudioTracks()));
         proc = actx.createScriptProcessor(4096, 1, 1); proc.onaudioprocess = block;
         const mute = actx.createGain(); mute.gain.value = 0;
@@ -233,6 +254,7 @@
       off() { want = false; teardown(); },
       get active() { return want; },
       get failed() { return failed; },
+      flush() { if (seg && voiced >= 2) { const c = seg; seg = null; send(c); return true; } seg = null; return false; },
       setLang() {}, pause() {},
       cloud: true,
     };
@@ -274,7 +296,7 @@
     async function startVad() {
       try {
         micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-        actx = new AudioContext(); analyser = actx.createAnalyser(); analyser.fftSize = 1024;
+        actx = newAudioContext(); analyser = actx.createAnalyser(); analyser.fftSize = 1024;
         actx.createMediaStreamSource(micStream).connect(analyser); buf = new Float32Array(analyser.fftSize);
       } catch { micStream = null; }
       vadTimer = setInterval(vadTick, 40);
@@ -405,7 +427,7 @@
     // A natural voice in this browser for this language (e.g. Microsoft Edge's Lebanese voices) speaks instantly.
     const arabic = /[؀-ۿ]/.test(text);
     const local = voices.length ? pickVoice(agent.gender, arabic, 0) : null;
-    const goodLocal = local && (!arabic || /^ar/i.test(local.lang)) && /natural|online|neural/i.test(local.name);
+    const goodLocal = tts !== 'premium' && local && (!arabic || /^ar/i.test(local.lang)) && /natural|online|neural/i.test(local.name); // your paid ElevenLabs voices beat any browser voice
     if (!tts || goodLocal) { earlyAudio.delete(id); return speak(text, agent); }
     const timer = setTimeout(() => { pendingVoice.delete(id); speak(text, agent); }, 25000);
     pendingVoice.set(id, { text, agent, timer });

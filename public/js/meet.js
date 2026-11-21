@@ -279,7 +279,7 @@
     let handsFree = !!rec && local.getAudioTracks().length > 0;
     const syncHands = () => { $('#handsBtn').innerHTML = `${ic.wave}<span>${handsFree ? 'Hands-free on' : 'Hands-free'}</span>`; $('#handsBtn').classList.toggle('on', handsFree); $('#handsBtn').setAttribute('aria-pressed', handsFree); };
     $('#handsBtn').addEventListener('click', () => {
-      if (!rec) return toast('Hands-free needs Chrome or Edge. You can type to the agents instead.');
+      if (!rec) return toast("This browser can't hear you by itself. Type to the agents instead.");
       handsFree = !handsFree; syncHands();
       if (handsFree && micOn()) rec.on(); else rec.off();
       if (handsFree && isPhone) toast('On some phones hands-free can mute your mic for others. Turn it off if they stop hearing you.', 5000);
@@ -296,7 +296,7 @@
       const was = handsFree && rec?.active; if (was) rec.off();
       MR.stopAudio();
       try {
-        const text = await MR.listenOnce({ lang: $('#lang').value, onInterim: (t) => caption('self', t) });
+        const text = await MR.listenOnce({ lang: $('#lang').value, onInterim: (t) => { caption('self', t); heard(t, false); }, cloud: useCloud && !rec?.failed, meetingId });
         if (text) say(MR.ensureAddressed(text, TEAM.filter((a) => agents.includes(a.id))), 'voice');
         else toast("Didn't catch that. Tap and try again.");
       } catch (e) { toast(e.message, 4000); }
