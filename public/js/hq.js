@@ -47,7 +47,7 @@
     const W = window.World || await new Promise((res) => { addEventListener('world-ready', () => res(window.World), { once: true }); setTimeout(() => res(null), 10000); });
     try {
       if (!W) throw new Error('3D engine did not load');
-      const w = W.init($('#world'), { onAgentClick: (id) => { const a = byId(id); $('#input').value = `${a.name}, `; $('#input').focus(); w.summon(id); } });
+      const w = W.init($('#world'), { onAgentClick: (id) => { const a = byId(id); $('#input').value = `${a.name}, `; $('#input').focus(); } });
       await w.load(TEAM);
       world = w;
       $('#worldLoading').remove();
@@ -104,13 +104,12 @@
   });
   socket.on('office:audio', ({ msgId, index, total, audio }) => MR.voiceArrived(msgId, audio, index, total));
   socket.on('agent:typing', ({ agentId, on }) => {
-    if (on) world?.summon(agentId); // they walk to the boardroom to answer you
     world?.thinking(agentId, on);
     const s = seat(agentId); if (!s) return;
     s.querySelector('.typing')?.remove();
     if (on) s.insertAdjacentHTML('beforeend', '<span class="typing">…</span>');
   });
-  socket.on('tasks:changed', () => { if (!$('#view-tasks').classList.contains('hidden')) loadTasks(); });
+  socket.on('tasks:changed', () => { if (!$('#view-tasks').classList.contains('hidden')) loadTasks(); loadTeam(); }); // new work: they walk to their desk
   socket.on('team:changed', async () => { await loadTeam(); if (!$('#view-office').classList.contains('hidden')) renderOffice(); });
 
   const send = (text, interrupted) => { if (text.trim()) { lastSent = Date.now(); awaitingReply = true; socket.emit('office:say', { text, interrupted: interrupted || undefined }); } };

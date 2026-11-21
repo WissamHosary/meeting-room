@@ -191,6 +191,26 @@ app.get('/recordings/:file', (req, res) => {
   res.sendFile(path.join(store.DATA_DIR, 'recordings', path.basename(req.params.file)));
 });
 
+// Voice the first sentence the moment Claude has written it, then the rest when the answer is complete.
+function earlyVoice(agentId, emit) {
+  let first = null;
+  return {
+    onEarly: (sentence) => {
+      if (!voice.enabled()) return;
+      first = sentence;
+      voice.synthesize(sentence, agentId).then((audio) => emit(0, 2, audio)).catch(() => emit(0, 2, null));
+    },
+    finish: (text) => {
+      if (!voice.enabled()) return;
+      if (first && text.startsWith(first)) {
+        const rest = text.slice(first.length).trim();
+        if (!rest) return emit(1, 2, null);
+        voice.synthesize(rest, agentId).then((audio) => emit(1, 2, audio)).catch(() => emit(1, 2, null));
+      } else if (!first) voice.speakInChunks(text, agentId, emit);
+    },
+  };
+}
+
 // ---------- realtime ----------
 const queues = new Map(); // one speaker at a time per room
 const enqueue = (room, fn) => { const p = (queues.get(room) || Promise.resolve()).then(fn).catch((e) => console.error(e)); queues.set(room, p); return p; };
@@ -217,12 +237,14 @@ io.on('connection', (socket) => {
       enqueue('office', async () => {
         io.to('office').emit('agent:typing', { agentId, on: true });
         const history = store.db.office.slice(-14).map((m) => ({ name: m.name, text: m.text }));
-        const r = await brain.respond({ agentId, text, mode: 'office', history, isOwner: true, interrupted: cut && cut.agent === agentId ? cut.said : null });
+        const msgId = store.id('o');
+        const ev = earlyVoice(agentId, (index, total, audio) => io.to('office').emit('office:audio', { msgId, index, total, audio }));
+        const r = await brain.respond({ agentId, text, mode: 'office', history, isOwner: true, interrupted: cut && cut.agent === agentId ? cut.said : null, onEarly: ev.onEarly });
         io.to('office').emit('agent:typing', { agentId, on: false });
-        const out = { id: store.id('o'), who: agentId, name: team.find((a) => a.id === agentId).name, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
+        const out = { id: msgId, who: agentId, name: team.find((a) => a.id === agentId).name, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
         store.db.office.push(out); store.save();
         io.to('office').emit('office:msg', out);
-        if (out.tts) voice.speakInChunks(out.text, agentId, (index, total, audio) => io.to('office').emit('office:audio', { msgId: out.id, index, total, audio }));
+        ev.finish(out.text);
         if (r.actions?.length) io.to('office').emit('tasks:changed');
       });
     }
@@ -268,12 +290,14 @@ io.on('connection', (socket) => {
       enqueue(room, async () => {
         io.to(room).emit('agent:typing', { agentId, on: true });
         const history = m.transcript.slice(-16).map((l) => ({ name: l.name, text: l.text }));
-        const r = await brain.respond({ agentId, text, mode: 'meeting', clientId: m.client, meeting: m, history: history.slice(0, -1), speaker: socket.data.name, isOwner: socket.data.owner });
+        const lineId = store.id('l');
+        const ev = earlyVoice(agentId, (index, total, audio) => io.to(room).emit('meet:audio', { lineId, index, total, audio }));
+        const r = await brain.respond({ agentId, text, mode: 'meeting', clientId: m.client, meeting: m, history: history.slice(0, -1), speaker: socket.data.name, isOwner: socket.data.owner, onEarly: ev.onEarly });
         io.to(room).emit('agent:typing', { agentId, on: false });
         const a = team.find((x) => x.id === agentId);
-        const out = { id: store.id('l'), name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
+        const out = { id: lineId, name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
         m.transcript.push(out); store.save(); io.to(room).emit('meet:line', out);
-        if (out.tts) voice.speakInChunks(out.text, agentId, (index, total, audio) => io.to(room).emit('meet:audio', { lineId: out.id, index, total, audio }));
+        ev.finish(out.text);
         if (r.actions?.length) io.to('office').emit('tasks:changed');
       });
     }

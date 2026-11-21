@@ -105,7 +105,10 @@ function init(container, { onAgentClick } = {}) {
       const x = -19 + c * 3.1, z = -6 + r * 3.2;
       box(1.7, 0.06, 0.85, wood, x, 0.75, z); box(0.06, 0.72, 0.7, dark, x - 0.8, 0.37, z); box(0.06, 0.72, 0.7, dark, x + 0.8, 0.37, z);
       box(0.75, 0.45, 0.04, M('#0c0f14', { emissive: '#2a5a8c', emissiveIntensity: 0.5 }), x, 1.05, z - 0.25);
-      spots.push({ x, z: z + 0.75, look: { x, z: z - 2 } });
+      // office chair: whoever has open tasks sits here and works
+      box(0.56, 0.08, 0.52, fabric, x, 0.45, z + 0.95); box(0.56, 0.62, 0.08, fabric, x, 0.8, z + 1.22);
+      box(0.06, 0.4, 0.06, dark, x, 0.22, z + 0.95);
+      spots.push({ x, z: z + 0.92, look: { x, z: z - 2 }, sit: true });
     }
     Z.desk = { door: { x: -9, z: HALL_Z }, spots };
   }
@@ -211,7 +214,7 @@ function init(container, { onAgentClick } = {}) {
       if (sp.swim) ag.root.position.y = SWIM_Y;
       if (sp.y) ag.root.position.y = sp.y;
       if (sp.look) ag.root.rotation.y = Math.atan2(sp.look.x - ag.root.position.x, sp.look.z - ag.root.position.z);
-      setAnim(ag, sp.anim === 'run' ? 'run' : sp.swim ? 'swim' : ag.thinking ? 'think' : 'idle');
+      setAnim(ag, sp.anim === 'run' ? 'run' : sp.swim ? 'swim' : sp.sit ? 'sit' : ag.thinking ? 'think' : 'idle');
     };
     agents.set(a.id, ag);
     walkTo(ag, a.place, true);
@@ -289,7 +292,7 @@ function init(container, { onAgentClick } = {}) {
       ag.summonTimer = setTimeout(() => { ag.summoned = false; if (ag.prev) walkTo(ag, ag.prev); ag.prev = null; }, ms);
     },
     speaking(id, on) { const ag = agents.get(id); if (!ag) return; ag.speaking = on; ag.label.el.classList.toggle('speaking', on); },
-    thinking(id, on) { const ag = agents.get(id); if (!ag) return; ag.label.el.classList.toggle('thinking', on); ag.thinking = on; if (!ag.path.length && !ag.swimming && ag.anim !== 'run') setAnim(ag, on ? 'think' : 'idle'); },
+    thinking(id, on) { const ag = agents.get(id); if (!ag) return; ag.label.el.classList.toggle('thinking', on); ag.thinking = on; if (!ag.path.length && !ag.swimming && ag.anim !== 'run' && ag.anim !== 'sit') setAnim(ag, on ? 'think' : 'idle'); }, // they answer right where they are
     view: flyTo,
   };
   return api;

@@ -231,6 +231,8 @@
   function cancelVoices() {
     for (const [, p] of pendingVoice) clearTimeout(p.timer);
     pendingVoice.clear();
+    for (const [, e] of earlyAudio) clearTimeout(e.timer);
+    earlyAudio.clear();
     stopAudio();
   }
 
@@ -265,13 +267,23 @@
     const arabic = /[؀-ۿ]/.test(text);
     const local = voices.length ? pickVoice(agent.gender, arabic, 0) : null;
     const goodLocal = local && (!arabic || /^ar/i.test(local.lang)) && /natural|online|neural/i.test(local.name);
-    if (!tts || goodLocal) return speak(text, agent);
+    if (!tts || goodLocal) { earlyAudio.delete(id); return speak(text, agent); }
     const timer = setTimeout(() => { pendingVoice.delete(id); speak(text, agent); }, 25000);
     pendingVoice.set(id, { text, agent, timer });
+    // the first sentence's voice may have arrived before the text did: play it now
+    const early = earlyAudio.get(id);
+    if (early) { earlyAudio.delete(id); clearTimeout(early.timer); early.list.forEach((x) => voiceArrived(id, x.audio, x.index, x.total)); }
   }
+  // Voice pieces that arrive before their message is shown wait here (up to a minute).
+  const earlyAudio = new Map();
   // Voice comes in pieces (first sentence first); play them strictly in order as they arrive.
   function voiceArrived(id, audio, index = 0, total = 1) {
-    const p = pendingVoice.get(id); if (!p) return;
+    const p = pendingVoice.get(id);
+    if (!p) {
+      const e = earlyAudio.get(id) || { list: [], timer: setTimeout(() => earlyAudio.delete(id), 60000) };
+      e.list.push({ audio, index, total }); earlyAudio.set(id, e);
+      return;
+    }
     clearTimeout(p.timer);
     p.got ||= {}; p.got[index] = audio || 'fail'; p.next ||= 0;
     while (p.got[p.next] !== undefined) {

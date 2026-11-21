@@ -69,6 +69,8 @@ function stripNames(text) {
 function placeOf(agent) {
   const o = store.db.overrides[agent.id];
   if (o) return o;
+  // anyone with open work sits at their desk until it's done
+  if (store.db.tasks.some((t) => t.agent === agent.id && t.status !== 'done')) return 'desk';
   const hour = Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Beirut', hour: 'numeric', hour12: false }));
   return routineFor(agent, hour % 24);
 }
@@ -157,7 +159,7 @@ function recordUsage(model, usage, who = 'other') {
   return usd;
 }
 // kb: the company knowledge, sent first and cached so every reply knows everything at a fraction of the cost.
-async function claudeCall(system, user, { kb, who } = {}) {
+async function claudeCall(system, user, { kb, who, onEarly } = {}) {
   const model = claudeModel();
   const systemBlocks = [];
   if (kb) systemBlocks.push({ type: 'text', text: kb, cache_control: { type: 'ephemeral' } });
@@ -169,9 +171,20 @@ async function claudeCall(system, user, { kb, who } = {}) {
   };
   // Opus/Sonnet 5.5: if a request is ever declined, the API retries it on a fallback model automatically.
   const withFallback = /^claude-(opus|sonnet)-5-5/.test(model);
-  const res = withFallback
-    ? await claudeClientFor().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
-    : await claudeClientFor().messages.create(params);
+  // Stream the answer so the first sentence can be turned into voice while Claude is still writing the rest.
+  const stream = withFallback
+    ? claudeClientFor().beta.messages.stream({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
+    : claudeClientFor().messages.stream(params);
+  if (onEarly) {
+    let soFar = '', sent = false;
+    stream.on('text', (delta) => {
+      if (sent) return;
+      soFar += delta;
+      const m = soFar.match(/^([\s\S]{25,}?[.!?؟…\n])\s/); // first complete sentence (not too short)
+      if (m && !m[1].includes('[[')) { sent = true; try { onEarly(m[1].trim()); } catch {} }
+    });
+  }
+  const res = await stream.finalMessage();
   lastClaudeUsage = { model: res.model, ...res.usage };
   recordUsage(res.model || model, res.usage, who);
   if (res.stop_reason === 'refusal') return 'معليش، ما فيني ساعد بهالشي. فيني ساعدك بشي تاني؟';
@@ -366,7 +379,7 @@ function offline(agent, text, { clientId, tools, speaker, isOwner, mode }) {
 }
 
 // ---------- main entry ----------
-async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true, interrupted = null }) {
+async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true, interrupted = null, onEarly = null }) {
   const agent = byId[agentId];
   const tools = await gatherTools(agent, text);
   // Claude; if it fails (no credit, bad key, outage) the built-in office brain answers.
@@ -380,7 +393,7 @@ async function respond({ agentId, text, mode = 'office', clientId = null, meetin
       // With Claude, the FULL knowledge goes into a cached system block instead of a per-question selection.
       const useClaude = p === 'claude';
       const user = `${contextBlock({ agent, clientId, mode, meeting, skipKnowledge: useClaude, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\n${interrupted ? `(${speaker} just talked over you and cut you off while you were saying: "${interrupted}". That's fine, like a real conversation: don't repeat what you already said and don't apologise at length; respond to what ${speaker} just said.)\n\n` : ''}Reply now as ${agent.name}, speaking directly.`;
-      const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user, useClaude ? { kb: knowledgeText(mode), provider: p, who: agentId } : { provider: p, who: agentId }), agent, isOwner);
+      const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user, useClaude ? { kb: knowledgeText(mode), provider: p, who: agentId, onEarly } : { provider: p, who: agentId }), agent, isOwner);
       return { ...out, links: tools?.items?.length ? [tools.wiki && { title: `Wikipedia: ${tools.wiki.title}`, link: tools.wiki.url }, ...tools.items].filter(Boolean) : undefined, provider: p };
     } catch (e) {
       console.warn(`[brain] ${p} failed, trying the next brain:`, e.message);

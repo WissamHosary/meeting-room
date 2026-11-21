@@ -109,7 +109,7 @@ team.forEach((a) => { a.look = looks[a.id]; });
 
 // Living office: where each agent tends to be, by hour (Beirut time). Cheap simulation, no AI cost.
 const places = {
-  desk: 'At their desk', boardroom: 'In the boardroom', cafeteria: 'Eating at the cafeteria',
+  desk: 'Working at their desk', boardroom: 'In the boardroom', cafeteria: 'Eating at the cafeteria',
   gym: 'At the gym', pool: 'Swimming at the rooftop pool', games: 'In the game room',
   coffee: 'Grabbing coffee', home: 'Off for the day',
 };
