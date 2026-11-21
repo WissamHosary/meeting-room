@@ -58,7 +58,10 @@ async function relayServers() {
   iceCache = { at: Date.now(), key, servers };
   return servers;
 }
+// Only the owner, or someone with a link to an open meeting, gets relay credentials (protects your bandwidth).
+const openMeeting = (id) => store.db.meetings.find((m) => m.id === id && !m.endedAt);
 app.get('/api/ice', async (req, res) => {
+  if (!isOwnerKey(req.get('x-owner-key')) && !openMeeting(String(req.query.m || ''))) return res.status(403).json({ error: 'meeting link required' });
   const relays = await relayServers();
   res.json({ iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }, ...relays], relay: relays.length > 0 });
 });
@@ -119,15 +122,18 @@ app.get('/api/meetings', owner, (req, res) => res.json(store.db.meetings.map(({ 
 app.post('/api/meetings', owner, (req, res) => {
   const agents = Array.isArray(req.body.agents) ? req.body.agents.filter((id) => team.some((a) => a.id === id)) : [];
   for (const must of ['fadi', 'karim']) if (!agents.includes(must)) agents.push(must);
-  const m = { id: crypto.randomBytes(5).toString('hex'), title: String(req.body.title || 'Meeting').trim(), client: req.body.client || null, agents, transcript: [], recordings: [], summary: null, at: new Date().toISOString() };
+  // long, unguessable link id
+  const m = { id: crypto.randomBytes(9).toString('base64url'), title: String(req.body.title || 'Meeting').trim(), client: req.body.client || null, agents, transcript: [], recordings: [], summary: null, at: new Date().toISOString() };
   store.db.meetings.push(m); store.save(); res.json(m);
 });
 app.get('/api/meetings/:id', (req, res) => {
   const m = store.db.meetings.find((x) => x.id === req.params.id);
   if (!m) return res.status(404).json({ error: 'not found' });
+  const isOwnerReq = isOwnerKey(req.get('x-owner-key'));
+  if (m.endedAt && !isOwnerReq) return res.status(410).json({ error: 'This meeting has ended' });
   const client = store.db.clients.find((c) => c.id === m.client);
   const base = { id: m.id, title: m.title, clientName: client?.name || null, agents: m.agents };
-  res.json(isOwnerKey(req.get('x-owner-key')) ? { ...base, transcript: m.transcript, summary: m.summary, recordings: m.recordings } : base);
+  res.json(isOwnerReq ? { ...base, transcript: m.transcript, summary: m.summary, recordings: m.recordings } : base);
 });
 
 const upload = multer({ storage: multer.diskStorage({ destination: path.join(store.DATA_DIR, 'recordings'), filename: (req, f, cb) => cb(null, `${req.params.id}-${Date.now()}.webm`) }), limits: { fileSize: 500e6 } });
@@ -180,6 +186,7 @@ io.on('connection', (socket) => {
     const m = store.db.meetings.find((x) => x.id === meetingId);
     if (!m) return socket.emit('meet:error', 'Meeting not found');
     socket.data.owner = isOwnerKey(key);
+    if (m.endedAt && !socket.data.owner) return socket.emit('meet:error', 'This meeting has ended');
     socket.data.name = (socket.data.owner ? name || 'Wissam' : String(name || 'Guest')).slice(0, 40);
     socket.data.meetingId = meetingId;
     const room = `meet:${meetingId}`;
@@ -188,7 +195,12 @@ io.on('connection', (socket) => {
     socket.emit('meet:welcome', { you: socket.id, owner: socket.data.owner, peers, agents: m.agents, recording: !!m.recordingOn });
     socket.to(room).emit('meet:peer-joined', { id: socket.id, name: socket.data.name, owner: socket.data.owner });
   });
-  socket.on('rtc:signal', ({ to, data }) => { if (socket.data.meetingId) io.to(to).emit('rtc:signal', { from: socket.id, data }); });
+  // call signals only go to people in the SAME meeting
+  socket.on('rtc:signal', ({ to, data }) => {
+    const target = io.sockets.sockets.get(to);
+    if (!socket.data.meetingId || !target || target.data.meetingId !== socket.data.meetingId) return;
+    target.emit('rtc:signal', { from: socket.id, data });
+  });
 
   socket.on('meet:say', ({ text, via }) => {
     const m = store.db.meetings.find((x) => x.id === socket.data.meetingId);
@@ -197,7 +209,14 @@ io.on('connection', (socket) => {
     const line = { name: socket.data.name, peer: socket.id, owner: socket.data.owner, text: text.trim().slice(0, 2000), via: via || 'chat', at: now() };
     m.transcript.push(line); store.save(); io.to(room).emit('meet:line', line);
     // Agents stay silent unless their name is mentioned.
-    const targets = brain.addressed(text).filter((id) => m.agents.includes(id));
+    let targets = brain.addressed(text).filter((id) => m.agents.includes(id));
+    // guests get a fair limit on agent questions (protects your free AI quota from spam)
+    if (targets.length && !socket.data.owner) {
+      const now = Date.now();
+      socket.data.asks = (socket.data.asks || []).filter((t) => now - t < 60000);
+      if (socket.data.asks.length >= 6) { socket.emit('meet:error', 'Please give the team a moment before asking again.'); targets = []; }
+      else socket.data.asks.push(now);
+    }
     for (const agentId of targets.slice(0, 3)) {
       enqueue(room, async () => {
         io.to(room).emit('agent:typing', { agentId, on: true });

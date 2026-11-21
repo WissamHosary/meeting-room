@@ -6,7 +6,7 @@
   let meeting, TEAM = [];
   try {
     [meeting, { team: TEAM }] = await Promise.all([api(`/api/meetings/${meetingId}`), api('/api/team')]);
-  } catch { $('#jTitle').textContent = 'Meeting not found'; $('#joinBtn').disabled = true; return; }
+  } catch (e) { $('#jTitle').textContent = /ended/i.test(e.message) ? 'This meeting has ended' : 'Meeting not found'; $('#jClient').textContent = 'Ask the host for a new invite link.'; $('#joinBtn').disabled = true; return; }
   const byId = (id) => TEAM.find((a) => a.id === id);
   const who = await api('/api/whoami').catch(() => ({ owner: false }));
   const isOwner = who.owner;
@@ -220,7 +220,7 @@
     });
 
     // ---------- WebRTC mesh (free, peer to peer) ----------
-    const ICE = await fetch('/api/ice').then((r) => r.json()).catch(() => ({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] }));
+    const ICE = await fetch(`/api/ice?m=${encodeURIComponent(meetingId)}`, { headers: { 'x-owner-key': KEY } }).then((r) => r.json()).catch(() => ({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] }));
     function makePeer(id, peerName, initiator = false) {
       const pc = new RTCPeerConnection(ICE);
       const stream = new MediaStream();

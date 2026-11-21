@@ -286,7 +286,7 @@
   $('#sTestRelay').addEventListener('click', async () => {
     $('#sRelayResult').textContent = 'Testing…';
     try {
-      const ice = await (await fetch('/api/ice')).json();
+      const ice = await api('/api/ice');
       if (!ice.relay) { $('#sRelayResult').innerHTML = '<span style="color:var(--warn)">No relay set yet. Calls only work when people can connect directly (often fails on mobile data).</span>'; return; }
       const pc = new RTCPeerConnection({ iceServers: ice.iceServers, iceTransportPolicy: 'relay' });
       pc.createDataChannel('t'); let n = 0;
