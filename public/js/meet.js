@@ -197,7 +197,7 @@
       if (on) { talkingAgents.add(id); const l = lastLine.get(id); if (l) subtitle(byId(id)?.name || '', l, 60000); }
       else { talkingAgents.delete(id); clearTimeout(subTimer); subTimer = setTimeout(() => $('#subtitle').classList.remove('show'), 1200); }
       renderPeople();
-      rec?.pause(on);
+      if (on) speakingText = lastLine.get(id) || ''; else agentStoppedAt = Date.now(); // the mic keeps listening (echo is filtered by words)
     });
 
     socket.on('meet:line', (l) => {
@@ -238,6 +238,16 @@
     $('#chatForm').addEventListener('submit', (e) => { e.preventDefault(); say($('#chatInput').value, 'chat'); $('#chatInput').value = ''; });
 
     // ---------- hands-free (agents hear you; they answer when named) ----------
+    // While an agent talks (or just stopped), the mic also hears the agent's own voice. If what it heard is the
+    // agent's words, ignore it; if it's different words, a person is talking: stop the agent for everyone.
+    let speakingText = '', agentStoppedAt = 0, lastWordInterrupt = 0;
+    function echoOrInterrupt(t) {
+      const talking = talkingAgents.size > 0;
+      if (!talking && Date.now() - agentStoppedAt > 2500) return false;
+      if (MR.isEcho(t, speakingText)) return true;
+      if (talking && Date.now() - lastWordInterrupt > 1500) { lastWordInterrupt = Date.now(); MR.cancelVoices(); socket.emit('meet:interrupt'); }
+      return false;
+    }
     // what the mic heard, shown live above the controls so you always know it understood you
     let heardTimer;
     const heard = (t, final) => {
@@ -246,8 +256,8 @@
     };
     const rec = recognizer({
       lang: $('#lang').value,
-      onFinal: (t) => { heard(t, true); say(t, 'voice'); },
-      onInterim: (t) => { heard(t, false); caption('self', t); },
+      onFinal: (t) => { if (echoOrInterrupt(t)) return; heard(t, true); say(t, 'voice'); },
+      onInterim: (t) => { if (echoOrInterrupt(t)) return; heard(t, false); caption('self', t); },
       onState: (on, err) => { if (err) toast(err); },
     });
     const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);

@@ -106,7 +106,10 @@
         }
       };
       rec.onend = () => { if (want) setTimeout(() => { try { start(); } catch {} }, 250); else onState?.(false); };
-      rec.onerror = (e) => { if (e.error === 'not-allowed') { want = false; onState?.(false, 'Microphone permission denied'); } };
+      rec.onerror = (e) => {
+        const why = speechErrorText(e.error);
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture' || e.error === 'network') { want = false; onState?.(false, why); }
+      };
       rec.start(); onState?.(true);
     };
     return {
@@ -118,6 +121,15 @@
     };
   }
 
+  // Plain-language reasons why the browser couldn't turn your voice into text.
+  function speechErrorText(code) {
+    return {
+      'not-allowed': 'Microphone blocked. Click the lock icon next to the address bar and allow the microphone.',
+      'service-not-allowed': 'This browser blocks voice recognition. Open the link in Google Chrome or Microsoft Edge.',
+      'audio-capture': 'No microphone found. Plug one in or check your sound settings.',
+      network: "Voice recognition isn't available here. Open the link in Google Chrome or Microsoft Edge (it doesn't work inside the Claude app's side pane).",
+    }[code] || `Voice recognition error: ${code}`;
+  }
   // Push-to-talk: listen for one sentence, resolve with the text ('' if nothing was heard).
   function listenOnce({ lang = 'en-US', onInterim } = {}) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -130,12 +142,24 @@
         for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t; else interim += t; }
         last = (finalText + interim).trim(); onInterim?.(last);
       };
-      rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') reject(new Error('Microphone permission denied')); };
+      rec.onerror = (e) => { if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(e.error)) reject(new Error(speechErrorText(e.error))); };
       rec.onend = () => resolve((finalText || last).trim());
       try { rec.start(); } catch (e) { reject(e); }
       listenOnce.stop = () => { try { rec.stop(); } catch {} };
     });
   }
+  // Is what the mic heard just the agent's own voice coming back from the speakers?
+  // Compares the words: mostly the agent's words means echo; different words means a real person is talking.
+  const normWords = (t) => String(t || '').toLowerCase()
+    .replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter((w) => w.length > 1);
+  function isEcho(heard, agentText) {
+    const h = normWords(heard); if (!h.length) return true;
+    const said = new Set(normWords(agentText)); if (!said.size) return false;
+    const fresh = h.filter((w) => !said.has(w)).length;
+    return fresh < 2 || fresh / h.length < 0.45;
+  }
+
   // Hands-free voice conversation, like a voice assistant:
   // - listens continuously and sends what you said when you pause;
   // - while an agent thinks or speaks, an echo-cancelled mic keeps watching for YOUR voice;
@@ -168,7 +192,7 @@
       if (state !== 'speaking' && state !== 'thinking') { loudFrames = 0; return; }
       // while the agent talks, learn how much of its voice still leaks through, and require you to be clearly louder
       if (state === 'speaking' && loudFrames === 0) echoFloor = echoFloor * 0.95 + v * 0.05;
-      const threshold = state === 'speaking' ? Math.max(floor * 4, echoFloor * 2.6, 0.035) : Math.max(floor * 3.5, 0.025);
+      const threshold = state === 'speaking' ? Math.max(floor * 4, echoFloor * 2.4, 0.03) : Math.max(floor * 3.5, 0.022);
       loudFrames = v > threshold ? loudFrames + 1 : Math.max(0, loudFrames - 1);
       if (loudFrames >= (state === 'speaking' ? 8 : 6)) bargeIn(); // ~300ms of your voice
     }
@@ -179,11 +203,21 @@
       buffer = ''; set('listening', 'barge'); startRec();
     }
     const lastSaid = new Map();
+    let spokeUntil = 0; // right after an agent stops, ignore the tail of its own voice
     const set = (s, extra) => { state = s; onState?.(s, extra); };
     function startRec() {
       if (!active || running) return;
       rec = new SR(); rec.lang = getLang(); rec.continuous = true; rec.interimResults = true;
       rec.onresult = (e) => {
+        if (state === 'speaking' || state === 'thinking' || (state === 'listening' && Date.now() - spokeUntil < 2500)) {
+          let heard = '', finals = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; heard += ' ' + t; if (e.results[i].isFinal) finals += ' ' + t; }
+          const agentText = lastSaid.get(speakingAgent) || '';
+          if (state !== 'listening' || agentText) {
+            if (isEcho(heard, state === 'thinking' ? '' : agentText)) return; // just the agent's voice: ignore
+            if (state !== 'listening') { bargeIn(); buffer = finals; onInterim?.(heard.trim()); return; } // a person talking: stop and listen (keep their words)
+          }
+        }
         if (state !== 'listening') return;
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) buffer += ' ' + t; else interim += t; }
@@ -191,15 +225,15 @@
         clearTimeout(sendTimer);
         if (buffer.trim() && !interim.trim()) sendTimer = setTimeout(flush, 800); // you paused
       };
-      rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { stop(); onState?.('error', 'Microphone permission denied'); } };
-      rec.onend = () => { running = false; if (active && state === 'listening') setTimeout(startRec, 150); };
+      rec.onerror = (e) => { if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(e.error)) { stop(); onState?.('error', speechErrorText(e.error)); } };
+      rec.onend = () => { running = false; if (active && state !== 'off') setTimeout(startRec, 150); };
       try { rec.start(); running = true; } catch {}
     }
     const stopRec = () => { try { rec?.abort(); } catch {} running = false; };
     function flush() {
       const text = buffer.trim(); buffer = '';
       if (!text || !active) return;
-      set('thinking', text); stopRec();
+      set('thinking', text); // keep listening: talking again while they think switches to your new question
       const info = interrupted; interrupted = null;
       onUtterance(text, info);
       clearTimeout(waitTimer);
@@ -213,8 +247,8 @@
     }
     speakListeners.add((id, on) => {
       if (!active) return;
-      if (on) { speakingAgent = id; set('speaking', id); stopRec(); }
-      else if (state === 'speaking') setTimeout(resume, 350);
+      if (on) { speakingAgent = id; set('speaking', id); startRec(); } // keep listening while they talk, so you can cut in
+      else if (state === 'speaking') { spokeUntil = Date.now(); setTimeout(resume, 350); }
     });
     function stop() { active = false; clearTimeout(sendTimer); clearTimeout(waitTimer); stopRec(); stopVad(); set('off'); }
     return {
@@ -308,5 +342,5 @@
     else p.timer = setTimeout(() => pendingVoice.delete(id), 30000);
   }
 
-  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, cancelVoices, playClip, stopAudio, speakMessage, voiceArrived, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
+  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, cancelVoices, isEcho, playClip, stopAudio, speakMessage, voiceArrived, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
 })();
