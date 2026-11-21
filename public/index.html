@@ -13,8 +13,13 @@
 <div id="locked" class="join hidden">
   <div class="card">
     <h1>Meeting Room</h1>
-    <p class="sub">This is Wissam's private HQ. Open it with the owner link printed in the server window.</p>
-    <p class="sub">Invited to a meeting? Use the meeting link you were sent.</p>
+    <p class="sub">This is Wissam's private HQ. Invited to a meeting? Use the meeting link you were sent.</p>
+    <form id="unlockForm" class="grid" style="gap:10px">
+      <label for="unlockKey" style="margin:0">Owner key</label>
+      <input id="unlockKey" type="password" autocomplete="current-password" required placeholder="Paste your OWNER_KEY">
+      <button class="btn primary">Enter HQ</button>
+      <p id="unlockErr" class="sub hidden" style="margin:0;color:var(--danger)">That key didn't work.</p>
+    </form>
   </div>
 </div>
 

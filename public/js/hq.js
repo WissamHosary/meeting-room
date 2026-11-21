@@ -3,7 +3,18 @@
   const $ = (s) => document.querySelector(s);
 
   const who = await api('/api/whoami').catch(() => ({ owner: false }));
-  if (!who.owner) { $('#locked').classList.remove('hidden'); return; }
+  if (!who.owner) {
+    $('#locked').classList.remove('hidden');
+    $('#unlockForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const k = $('#unlockKey').value.trim();
+      const ok = await fetch('/api/whoami', { headers: { 'x-owner-key': k } }).then((r) => r.json()).then((j) => j.owner).catch(() => false);
+      if (!ok) { $('#unlockErr').classList.remove('hidden'); return; }
+      try { localStorage.setItem('mr_owner_key', k); } catch {}
+      location.reload();
+    });
+    return;
+  }
   $('#app').classList.remove('hidden');
 
   let TEAM = [], PLACES = {}, CLIENTS = [], TASKS = [];
