@@ -27,7 +27,7 @@
     document.querySelectorAll('.nav button').forEach((x) => x.classList.toggle('active', x === b));
     document.querySelectorAll('main > section').forEach((s) => s.classList.add('hidden'));
     $(`#view-${b.dataset.view}`).classList.remove('hidden');
-    ({ office: renderOffice, tasks: loadTasks, meetings: loadMeetings, clients: loadClients, memory: () => { loadMemory(); loadKnowledge(); }, trends: loadFeed, settings: loadSettings })[b.dataset.view]?.();
+    ({ office: renderOffice, tasks: loadTasks, meetings: loadMeetings, clients: loadClients, memory: () => { loadMemory(); loadKnowledge(); }, trends: loadFeed, settings: loadSettings, spending: loadSpending })[b.dataset.view]?.();
   }));
 
   // ---------- data ----------
@@ -267,6 +267,59 @@
   }
   $('#refreshFeed').addEventListener('click', loadFeed);
 
+  // ---------- spending ----------
+  const money = (n) => (n >= 1 ? `$${n.toFixed(2)}` : n >= 0.01 ? `$${n.toFixed(3)}` : `$${n.toFixed(4)}`);
+  let tip = null;
+  const showTip = (e, html) => { tip ||= Object.assign(document.createElement('div'), { className: 'tip' }); tip.innerHTML = html; document.body.appendChild(tip); tip.style.left = `${Math.min(e.clientX + 14, innerWidth - 180)}px`; tip.style.top = `${e.clientY - 46}px`; };
+  const hideTip = () => tip?.remove();
+  async function refreshCreditPill() {
+    try { const d = await api('/api/usage'); $('#creditPill').textContent = `Credit: ${money(Math.max(0, d.creditTotal - d.usage.usd))} left`; } catch {}
+  }
+  $('#creditPill').addEventListener('click', () => document.querySelector('[data-view=spending]').click());
+  async function loadSpending() {
+    const d = await api('/api/usage');
+    const u = d.usage, left = Math.max(0, d.creditTotal - u.usd), pct = d.creditTotal ? Math.min(100, (u.usd / d.creditTotal) * 100) : 0;
+    $('#spLeft').textContent = money(left);
+    $('#spOf').textContent = `of ${money(d.creditTotal)} credit`;
+    $('#spBar').style.width = `${pct}%`; $('#spMeter').setAttribute('aria-valuenow', pct.toFixed(1)); $('#spMeter').classList.toggle('low', pct > 80);
+    $('#spUsedPct').textContent = `${pct.toFixed(pct < 1 ? 2 : 1)}% used`;
+    const days = Math.ceil((new Date(`${d.creditExpires}T23:59:59`) - Date.now()) / 864e5);
+    $('#spExpiry').textContent = days >= 0 ? `Expires ${new Date(d.creditExpires).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · ${days} days left` : 'Expired';
+    const avg = u.calls ? u.usd / u.calls : 0;
+    $('#spSpent').textContent = money(u.usd); $('#spCalls').textContent = u.calls.toLocaleString();
+    $('#spAvg').textContent = u.calls ? money(avg) : '–';
+    $('#spLeftReplies').textContent = avg ? Math.floor(left / avg).toLocaleString() : '–';
+    const modelName = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-haiku-5-5': 'Haiku 5.5' }[d.model] || d.model;
+    $('#spModel').textContent = `Current model: ${modelName}`;
+    // daily bars (one series, so no legend; the title names it)
+    const daysArr = [...Array(14)].map((_, i) => { const dt = new Date(Date.now() - (13 - i) * 864e5); return dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Beirut' }); });
+    const vals = daysArr.map((k) => u.byDay[k] || { usd: 0, calls: 0 });
+    const max = Math.max(...vals.map((v) => v.usd), 0.0001);
+    const nice = (() => { const p = 10 ** Math.floor(Math.log10(max)); return Math.ceil(max / p) * p; })();
+    $('#spDaily').innerHTML = [0.5, 1].map((f) => `<div class="gridline" style="bottom:${22 + f * (190 - 22)}px"><span>${money(nice * f)}</span></div>`).join('') +
+      vals.map((v, i) => `<div class="b" tabindex="0" data-i="${i}" aria-label="${daysArr[i]}: ${money(v.usd)}, ${v.calls} replies"><i style="height:${(v.usd / nice) * 100}%"></i><small>${i % 2 === 1 ? daysArr[i].slice(5).replace('-', '/') : ''}</small></div>`).join('');
+    $('#spDaily').querySelectorAll('.b').forEach((b) => {
+      const v = vals[b.dataset.i], label = new Date(`${daysArr[b.dataset.i]}T12:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+      const html = `<b>${label}</b><br>${money(v.usd)} · ${v.calls} replies`;
+      b.addEventListener('mousemove', (e) => showTip(e, html)); b.addEventListener('mouseleave', hideTip);
+      b.addEventListener('focus', () => { const r = b.getBoundingClientRect(); showTip({ clientX: r.left, clientY: r.top }, html); }); b.addEventListener('blur', hideTip);
+    });
+    $('#spDailyTable').innerHTML = vals.map((v, i) => `${daysArr[i]}: ${money(v.usd)} (${v.calls} replies)`).join('<br>');
+    // by team member
+    const agents = Object.entries(u.byAgent).sort((a, b) => b[1].usd - a[1].usd);
+    const amax = Math.max(...agents.map(([, v]) => v.usd), 0.0001);
+    $('#spAgents').innerHTML = agents.map(([id, v]) => { const a = byId(id) || { name: { test: 'Connection tests', karim: 'Karim (notes)', other: 'Other' }[id] || id, color: '#4b2370' };
+      return `<div class="hbar"><div class="who">${avatar(a)}<span>${esc(a.name)}</span></div><div class="track"><i style="width:${(v.usd / amax) * 100}%"></i></div><span class="v">${money(v.usd)} · ${v.calls}</span></div>`; }).join('') || '<p class="sub" style="margin:0">No Claude replies yet.</p>';
+    const t = u.tokens;
+    $('#spTokens').innerHTML = [['Read fresh (input)', t.in], ['Read from cache (90% cheaper)', t.cr], ['Saved to cache', t.cw], ['Written (replies + thinking)', t.out]]
+      .map(([k, v]) => `<div class="item" style="font-size:14px"><span>${k}</span><b style="font-variant-numeric:tabular-nums">${v.toLocaleString()}</b></div>`).join('') +
+      `<p class="fine" style="margin:4px 0 0">Tracking since ${u.since ? new Date(u.since).toLocaleDateString() : 'your first Claude reply'}.</p>`;
+    $('#spTotal').value = d.creditTotal; $('#spExp').value = d.creditExpires;
+    refreshCreditPill();
+  }
+  $('#spCreditForm').addEventListener('submit', async (e) => { e.preventDefault(); await api('/api/usage/credit', { method: 'POST', body: { total: $('#spTotal').value, expires: $('#spExp').value } }); toast('Credit details saved'); loadSpending(); });
+  setInterval(refreshCreditPill, 60000);
+
   // ---------- settings ----------
   const showTest = (t) => {
     $('#sResult').innerHTML = t.ok
@@ -319,6 +372,7 @@
   await loadTeam();
   startWorld();
   MR.loadPortraits(TEAM);
+  refreshCreditPill();
   const history = await api('/api/office');
   history.forEach((m) => addMsg(m));
   if (!history.length) addMsg({ who: 'fadi', name: 'Fadi', text: $('#lang').value === 'ar-LB'

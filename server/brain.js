@@ -130,8 +130,34 @@ function claudeClientFor() {
 }
 const claudeModel = () => process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 let lastClaudeUsage = null;
+
+// ---------- spending tracker ----------
+// Claude list prices, USD per 1M tokens: input, output, cache read, cache write (5-minute cache = 1.25x input).
+const PRICES = {
+  'claude-opus-5-5': { in: 4, out: 20, cr: 0.2, cw: 5 },
+  'claude-sonnet-5-5': { in: 2, out: 10, cr: 0.1, cw: 2.5 },
+  'claude-haiku-5-5': { in: 0.1, out: 0.5, cr: 0.01, cw: 0.125 },
+  'claude-opus-5': { in: 5, out: 25, cr: 0.5, cw: 6.25 },
+  'claude-sonnet-5': { in: 2, out: 10, cr: 0.2, cw: 2.5 },
+  'claude-opus-4-8': { in: 5, out: 25, cr: 0.5, cw: 6.25 },
+};
+const priceFor = (model) => PRICES[Object.keys(PRICES).find((k) => model && model.startsWith(k))] || PRICES[claudeModel()] || PRICES['claude-opus-5-5'];
+function recordUsage(model, usage, who = 'other') {
+  if (!usage) return 0;
+  const p = priceFor(model);
+  const t = { in: usage.input_tokens || 0, out: usage.output_tokens || 0, cr: usage.cache_read_input_tokens || 0, cw: usage.cache_creation_input_tokens || 0 };
+  const usd = (t.in * p.in + t.out * p.out + t.cr * p.cr + t.cw * p.cw) / 1e6;
+  const u = (store.db.usage ||= { since: new Date().toISOString(), calls: 0, usd: 0, tokens: { in: 0, out: 0, cr: 0, cw: 0 }, byDay: {}, byAgent: {}, byModel: {} });
+  const day = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Beirut' }); // YYYY-MM-DD, Beirut time
+  u.calls++; u.usd += usd;
+  for (const k of Object.keys(t)) u.tokens[k] += t[k];
+  const bump = (bucket, key) => { const b = (bucket[key] ||= { usd: 0, calls: 0 }); b.usd += usd; b.calls++; };
+  bump(u.byDay, day); bump(u.byAgent, who); bump(u.byModel, model || 'unknown');
+  store.save();
+  return usd;
+}
 // kb: the company knowledge, sent first and cached so every reply knows everything at a fraction of the cost.
-async function claudeCall(system, user, { kb } = {}) {
+async function claudeCall(system, user, { kb, who } = {}) {
   const model = claudeModel();
   const systemBlocks = [];
   if (kb) systemBlocks.push({ type: 'text', text: kb, cache_control: { type: 'ephemeral' } });
@@ -147,6 +173,7 @@ async function claudeCall(system, user, { kb } = {}) {
     ? await claudeClientFor().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
     : await claudeClientFor().messages.create(params);
   lastClaudeUsage = { model: res.model, ...res.usage };
+  recordUsage(res.model || model, res.usage, who);
   if (res.stop_reason === 'refusal') return 'معليش، ما فيني ساعد بهالشي. فيني ساعدك بشي تاني؟';
   return res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
 }
@@ -353,7 +380,7 @@ async function respond({ agentId, text, mode = 'office', clientId = null, meetin
       // With Claude, the FULL knowledge goes into a cached system block instead of a per-question selection.
       const useClaude = p === 'claude';
       const user = `${contextBlock({ agent, clientId, mode, meeting, skipKnowledge: useClaude, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\nReply now as ${agent.name}, speaking directly.`;
-      const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user, useClaude ? { kb: knowledgeText(mode), provider: p } : { provider: p }), agent, isOwner);
+      const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user, useClaude ? { kb: knowledgeText(mode), provider: p, who: agentId } : { provider: p, who: agentId }), agent, isOwner);
       return { ...out, links: tools?.items?.length ? [tools.wiki && { title: `Wikipedia: ${tools.wiki.title}`, link: tools.wiki.url }, ...tools.items].filter(Boolean) : undefined, provider: p };
     } catch (e) {
       console.warn(`[brain] ${p} failed, trying the next brain:`, e.message);
@@ -368,7 +395,7 @@ async function summarize(meeting) {
   if (!transcript.trim()) return 'The meeting had no spoken transcript.';
   if (provider() !== 'offline') {
     try {
-      return (await callLLM(systemPrompt(byId.karim), `Write the meeting minutes for "${meeting.title}"${meeting.client ? ` with client ${clientName(meeting.client)}` : ''}. Sections: Summary (3-5 sentences), Decisions, Action items (owner + task). Plain text.\n\nTranscript:\n${transcript}`)).trim();
+      return (await callLLM(systemPrompt(byId.karim), `Write the meeting minutes for "${meeting.title}"${meeting.client ? ` with client ${clientName(meeting.client)}` : ''}. Sections: Summary (3-5 sentences), Decisions, Action items (owner + task). Plain text.\n\nTranscript:\n${transcript}`, { who: 'karim' })).trim();
     } catch (e) { console.warn('[karim] summary fallback:', e.message); }
   }
   const people = [...new Set(meeting.transcript.map((l) => l.name))];
@@ -380,9 +407,9 @@ async function testBrain() {
   const p = provider();
   if (p === 'offline') return { ok: false, provider: p, error: 'No AI key set' };
   try {
-    const text = await callLLM('You are Fadi, a friendly general manager. Reply in one short sentence.', 'Wissam just connected your brain. Say hi to him.');
+    const text = await callLLM('You are Fadi, a friendly general manager. Reply in one short sentence.', 'Wissam just connected your brain. Say hi to him.', { who: 'test' });
     return { ok: true, provider: p, model: lastClaudeUsage?.model || claudeModel(), text: text.trim() };
   } catch (e) { return { ok: false, provider: p, error: e.message }; }
 }
 
-module.exports = { testBrain, detectMentions, addressed, respond, summarize, provider, placeOf, addTask, remember, news };
+module.exports = { PRICES, testBrain, detectMentions, addressed, respond, summarize, provider, placeOf, addTask, remember, news };

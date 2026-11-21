@@ -82,6 +82,23 @@ app.post('/api/settings', owner, async (req, res) => {
   io.to('office').emit('team:changed');
   res.json({ ...settings.view(), test: await brain.testBrain() });
 });
+// ---------- Claude spending (tracked from the token counts Claude returns with every reply) ----------
+app.get('/api/usage', owner, (req, res) => {
+  const u = store.db.usage || { since: null, calls: 0, usd: 0, tokens: { in: 0, out: 0, cr: 0, cw: 0 }, byDay: {}, byAgent: {}, byModel: {} };
+  res.json({
+    usage: u,
+    creditTotal: Number(process.env.CREDIT_TOTAL || 200),
+    creditExpires: process.env.CREDIT_EXPIRES || '2026-12-15',
+    model: process.env.CLAUDE_MODEL || 'claude-opus-5-5',
+    prices: brain.PRICES,
+  });
+});
+app.post('/api/usage/credit', owner, (req, res) => {
+  const total = Number(req.body?.total), expires = String(req.body?.expires || '');
+  settings.save({ CREDIT_TOTAL: total > 0 ? String(total) : undefined, CREDIT_EXPIRES: /^\d{4}-\d{2}-\d{2}$/.test(expires) ? expires : undefined });
+  res.json({ ok: true });
+});
+app.post('/api/usage/reset', owner, (req, res) => { delete store.db.usage; store.save(); res.json({ ok: true }); });
 app.post('/api/settings/test', owner, async (req, res) => res.json(await brain.testBrain()));
 
 // ---------- company knowledge (what the agents know about Mukafaah and the business) ----------

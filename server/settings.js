@@ -2,7 +2,7 @@
 // (data/db.json locally, the Key-Value store in the cloud). Host environment variables always win.
 const store = require('./store');
 
-const KEYS = ['AI_PROVIDER', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'TREND_TOPICS', 'CF_TURN_KEY_ID', 'CF_TURN_TOKEN', 'METERED_DOMAIN', 'METERED_API_KEY', 'AGENT_LANGUAGE', 'CLAUDE_MODEL'];
+const KEYS = ['AI_PROVIDER', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'TREND_TOPICS', 'CF_TURN_KEY_ID', 'CF_TURN_TOKEN', 'METERED_DOMAIN', 'METERED_API_KEY', 'AGENT_LANGUAGE', 'CLAUDE_MODEL', 'CREDIT_TOTAL', 'CREDIT_EXPIRES'];
 const fromHost = new Set(KEYS.filter((k) => process.env[k]));
 
 function load() {
