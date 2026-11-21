@@ -274,6 +274,11 @@
     const early = earlyAudio.get(id);
     if (early) { earlyAudio.delete(id); clearTimeout(early.timer); early.list.forEach((x) => voiceArrived(id, x.audio, x.index, x.total)); }
   }
+  let noVoiceShown = 0;
+  function noVoiceNotice() {
+    if (Date.now() - noVoiceShown < 120000) return; noVoiceShown = Date.now();
+    toast("Agents can't speak right now: the voice service didn't answer. The owner can check Settings → Voices → Test voice.", 6000);
+  }
   // Voice pieces that arrive before their message is shown wait here (up to a minute).
   const earlyAudio = new Map();
   // Voice comes in pieces (first sentence first); play them strictly in order as they arrive.
@@ -288,8 +293,15 @@
     p.got ||= {}; p.got[index] = audio || 'fail'; p.next ||= 0;
     while (p.got[p.next] !== undefined) {
       const a = p.got[p.next];
-      if (a === 'fail') { if (p.next === 0 && total === 1) speak(p.text, p.agent); } // nothing usable: browser voice
-      else playClip(`/api/audio/${a}`, p.agent);
+      if (p.abandoned) { p.next++; continue; }
+      if (a === 'fail') {
+        if (p.next === 0) { // the voice service failed: read the whole reply with the browser's voice instead
+          p.abandoned = true;
+          const arabic = /[؀-ۿ]/.test(p.text);
+          if (arabic && !voices.some((v) => /^ar/i.test(v.lang))) noVoiceNotice();
+          else speak(p.text, p.agent);
+        }
+      } else playClip(`/api/audio/${a}`, p.agent);
       p.next++;
     }
     if (p.next >= total) pendingVoice.delete(id);

@@ -211,6 +211,27 @@
       } else if (l.peer && l.peer !== socket.id) caption(l.peer, l.text);
     });
     socket.on('meet:audio', ({ lineId, index, total, audio }) => MR.voiceArrived(lineId, audio, index, total));
+    // someone (you or anyone else) talked over an agent: everyone's agent voice stops at once
+    socket.on('meet:stop-voices', ({ by }) => {
+      if (!talkingAgents.size) return;
+      MR.cancelVoices(); talkingAgents.forEach((id) => room?.speaking(id, false)); talkingAgents.clear(); renderPeople();
+      $('#subtitle').classList.remove('show');
+      if (by && by !== name) toast(`${by} is speaking`, 1800);
+    });
+    // watch YOUR mic while an agent speaks; if you clearly start talking, interrupt (echo-cancelled mic, so the
+    // agent's own voice from your speakers doesn't count)
+    const selfLevel = level(local);
+    let loud = 0, echoFloor = 0.02, lastInterrupt = 0;
+    setInterval(() => {
+      if (!talkingAgents.size || !micOn()) { loud = 0; return; }
+      const v = selfLevel();
+      if (loud === 0) echoFloor = echoFloor * 0.95 + v * 0.05;
+      loud = v > Math.max(echoFloor * 2.6, 0.04) ? loud + 1 : Math.max(0, loud - 1);
+      if (loud >= 7 && Date.now() - lastInterrupt > 1500) { // ~300ms of your voice
+        loud = 0; lastInterrupt = Date.now();
+        MR.cancelVoices(); socket.emit('meet:interrupt');
+      }
+    }, 45);
     socket.on('agent:typing', ({ agentId, on }) => { room?.thinking(agentId, on); on ? thinking.add(agentId) : thinking.delete(agentId); renderPeople(); });
     const say = (text, via) => { if (text.trim()) socket.emit('meet:say', { text, via }); };
     $('#chatSend').innerHTML = ic.send;

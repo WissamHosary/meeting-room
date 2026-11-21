@@ -77,7 +77,7 @@ app.get('/api/settings', owner, (req, res) => res.json(settings.view()));
 app.post('/api/settings', owner, async (req, res) => {
   const b = req.body || {};
   settings.save({ AI_PROVIDER: b.provider, GEMINI_API_KEY: b.gemini, GROQ_API_KEY: b.groq, ANTHROPIC_API_KEY: b.claude, GEMINI_MODEL: b.geminiModel,
-    AGENT_LANGUAGE: b.language, CLAUDE_MODEL: b.claudeModel, CF_TURN_KEY_ID: b.cfTurnId, CF_TURN_TOKEN: b.cfTurn, METERED_DOMAIN: b.meteredDomain, METERED_API_KEY: b.metered });
+    AGENT_LANGUAGE: b.language, CLAUDE_MODEL: b.claudeModel, ELEVENLABS_API_KEY: b.eleven, CF_TURN_KEY_ID: b.cfTurnId, CF_TURN_TOKEN: b.cfTurn, METERED_DOMAIN: b.meteredDomain, METERED_API_KEY: b.metered });
   iceCache.at = 0;
   io.to('office').emit('team:changed');
   res.json({ ...settings.view(), test: await brain.testBrain() });
@@ -102,7 +102,7 @@ app.post('/api/usage/reset', owner, (req, res) => { delete store.db.usage; store
 // Voice self-test: makes one short clip and reports what happened.
 app.post('/api/voice/test', owner, async (req, res) => {
   const t0 = Date.now();
-  const id = await voice.synthesize('أهلا وسام، هيدا اختبار للصوت.', 'fadi');
+  const id = await voice.synthesize('أهلا وسام، أنا فادي. هيك رح تسمعني بالـ meeting.', 'fadi');
   res.json({ ok: !!id, audio: id, ms: Date.now() - t0, ...voice.status() });
 });
 app.post('/api/settings/test', owner, async (req, res) => res.json(await brain.testBrain()));
@@ -331,6 +331,13 @@ io.on('connection', (socket) => {
       else socket.data.asks.push(now);
     }
     for (const agentId of targets.slice(0, 3)) agentAnswer(m, agentId, text, socket.data.name, socket.data.owner, 0);
+  });
+
+  // anyone in the call talked over an agent: stop the agent's voice for everyone
+  socket.on('meet:interrupt', () => {
+    if (!socket.data.meetingId) return;
+    const now = Date.now(); if (now - (socket.data.lastInterrupt || 0) < 1000) return; socket.data.lastInterrupt = now;
+    io.to(`meet:${socket.data.meetingId}`).emit('meet:stop-voices', { by: socket.data.name });
   });
 
   socket.on('meet:agents', ({ agents }) => {

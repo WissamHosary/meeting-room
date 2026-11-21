@@ -350,16 +350,17 @@
     const now = (v, k) => (v ? `· saved ${v}${s.fromHost.includes(k) ? ' (set on server)' : ''}` : '· not set');
     $('#sCfIdNow').textContent = now(s.cfTurnId, 'CF_TURN_KEY_ID'); $('#sCfTokNow').textContent = now(s.cfTurn, 'CF_TURN_TOKEN');
     $('#sMetDomNow').textContent = s.meteredDomain ? `· ${s.meteredDomain}` : '· not set'; $('#sMetKeyNow').textContent = now(s.metered, 'METERED_API_KEY');
-    $('#sGeminiNow').textContent = now(s.gemini, 'GEMINI_API_KEY'); $('#sClaudeNow').textContent = now(s.claude, 'ANTHROPIC_API_KEY');
+    $('#sGeminiNow').textContent = now(s.gemini, 'GEMINI_API_KEY');
+    $('#sElevenNow').textContent = now(s.eleven, 'ELEVENLABS_API_KEY'); $('#sClaudeNow').textContent = now(s.claude, 'ANTHROPIC_API_KEY');
   }
   $('#settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('#sResult').textContent = 'Saving and testing…';
     const body = { provider: $('#sProvider').value, language: $('#sLanguage').value, claudeModel: $('#sClaudeModel').value };
-    for (const [k, id] of [['gemini', '#sGemini'], ['claude', '#sClaude'], ['cfTurnId', '#sCfId'], ['cfTurn', '#sCfTok'], ['meteredDomain', '#sMetDom'], ['metered', '#sMetKey']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
+    for (const [k, id] of [['gemini', '#sGemini'], ['eleven', '#sEleven'], ['claude', '#sClaude'], ['cfTurnId', '#sCfId'], ['cfTurn', '#sCfTok'], ['meteredDomain', '#sMetDom'], ['metered', '#sMetKey']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
     try {
       const r = await api('/api/settings', { method: 'POST', body });
-      ['#sGemini', '#sClaude', '#sCfId', '#sCfTok', '#sMetDom', '#sMetKey'].forEach((id) => { $(id).value = ''; });
+      ['#sGemini', '#sEleven', '#sClaude', '#sCfId', '#sCfTok', '#sMetDom', '#sMetKey'].forEach((id) => { $(id).value = ''; });
       showTest(r.test);
     } catch (err) { showTest({ ok: false, error: err.message }); }
     loadSettings(); loadTeam();
@@ -367,6 +368,17 @@
   $('#sTest').addEventListener('click', async () => {
     $('#sResult').textContent = 'Testing…';
     try { showTest(await api('/api/settings/test', { method: 'POST' })); } catch (err) { showTest({ ok: false, error: err.message }); }
+  });
+  // Voice test: make a sample clip on the server and play it here.
+  $('#sTestVoice').addEventListener('click', async () => {
+    $('#sVoiceResult').textContent = 'Making a sample…';
+    try {
+      const r = await api('/api/voice/test', { method: 'POST' });
+      if (r.ok) {
+        $('#sVoiceResult').innerHTML = `<span style="color:var(--ok)">Voice works (${esc(r.provider)}, ${(r.ms / 1000).toFixed(1)}s).</span> Playing Fadi…`;
+        MR.playClip(`/api/audio/${r.audio}`, byId('fadi') || { id: 'fadi' });
+      } else $('#sVoiceResult').innerHTML = `<span style="color:var(--danger)">No voice: ${esc(r.lastError || 'add an ElevenLabs key above')}</span>`;
+    } catch (err) { $('#sVoiceResult').textContent = err.message; }
   });
   // Ask the relay server for a relayed route from this browser: if it gives one, calls across networks will work.
   $('#sTestRelay').addEventListener('click', async () => {

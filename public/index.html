@@ -214,7 +214,10 @@
             <option value="claude-haiku-5-5">Claude Haiku 5.5 (fastest, cheapest)</option>
           </select></div>
         <h3 style="margin:10px 0 0">Voices</h3>
-        <div><label for="sGemini">Gemini key, for voices only <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Free key from aistudio.google.com/apikey"></div>
+        <p class="sub" style="margin:0">ElevenLabs gives the agents their voices (Fadi uses your Lebanese voice). Get your key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io → API Keys</a>. Gemini below is only a backup.</p>
+        <div><label for="sEleven">ElevenLabs API key <span id="sElevenNow"></span></label><input id="sEleven" type="password" autocomplete="off" placeholder="sk_..."></div>
+        <div class="row"><button type="button" class="btn" id="sTestVoice">Test voice</button><span id="sVoiceResult" class="sub" style="margin:0" aria-live="polite"></span></div>
+        <div><label for="sGemini">Gemini key, backup voice <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Free key from aistudio.google.com/apikey"></div>
         <h3 style="margin:10px 0 0">Calls: audio relay (so clients on other networks can hear you)</h3>
         <p class="sub" style="margin:0">Free Cloudflare TURN: in the Cloudflare dashboard open <b>Realtime → TURN Server → Create</b>, then copy the <b>Turn Token ID</b> and <b>API Token</b> here. Or use a free Metered account.</p>
         <div class="row" style="align-items:end">
