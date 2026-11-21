@@ -278,7 +278,10 @@ const TOPIC_HINTS = [
   [/brand|logo|لوغو|لون|ألوان|colou?r|kafo|كافو|design|تصميم/i, ['Brand identity and Kafo the bear']],
   [/marketing|تسويق|post|بوست|instagram|انستغرام|tiktok|carousel|content|محتوى/i, ['Marketing content produced', 'Brand identity and Kafo the bear']],
   [/roadmap|launch|إطلاق|status|وين صرنا|next|بعدين|plan|خطة/i, ['Product status and roadmap', 'Open positioning questions']],
-  [/website|موقع|qr|menu|منيو|odoo|whatsapp|واتساب|services?|خدمات/i, ['Services beyond Mukafaah', 'Portfolio of brand sites']],
+  [/website|موقع|qr|menu|منيو|odoo|whatsapp|واتساب|services?|خدمات/i, ['Services beyond Mukafaah', 'Portfolio of brand sites', 'WhatsApp store and QR menu product', "Wissam's digital services (general)"]],
+  [/qasr|kasr|9asr|قصر|حلويات|halaw|halw|knef|كنافة|معمول|maamoul|baklaw|بقلاوة|palace/i, ['Qasr El Halawiyat (قصر الحلويات): client overview', 'Qasr El Halawiyat: web ordering store', 'Qasr El Halawiyat: app proposal and opening animation', 'Qasr El Halawiyat: Qasr Rewards and Build the Palace game', 'Qasr El Halawiyat: status and next steps', 'Qasr El Halawiyat: design style', 'Qasr El Halawiyat: menu data']],
+  [/makhzan|مخزن|warehouse|fulfil|مستودع|cod\b|drivers?|توصيل/i, ['Al-Makhzan: warehouse and fulfillment platform']],
+  [/basta|بسطة|hayat|doner|döner|nar kebab|akel|byousal|smart menu|projects?|مشاريع|portfolio/i, ['Other proposals and concept pages', 'Restaurant website concepts: Hayat Döner, Nar Kebab House, Akel Ma Byousal', 'Sebahi Smart Menu (QR menu SaaS codebase)', 'Portfolio of brand sites']],
 ];
 function relevantKnowledge(question, items) {
   if (!items.length) return [];
@@ -289,7 +292,7 @@ function relevantKnowledge(question, items) {
   const scored = items.map((k) => ({ k, s: (k.title + ' ' + k.text).toLowerCase().split(/[^a-z0-9؀-ۿ]+/).filter((w) => words.has(w)).length }))
     .filter((x) => x.s >= 2).sort((a, b) => b.s - a.s).slice(0, 3);
   scored.forEach((x) => pick.add(x.k.title));
-  const chosen = items.filter((k) => pick.has(k.title)).slice(0, 6);
+  const chosen = items.filter((k) => pick.has(k.title)).slice(0, 9);
   // custom items you add yourself are short and always included
   return [...new Set([...chosen, ...items.filter((k) => !TOPIC_HINTS.some(([, t]) => t.includes(k.title)) && !['What Mukafaah is', "Wissam's working style and preferences", 'The problem Mukafaah solves', 'Other projects (examples)'].includes(k.title) && k.text.length < 600)])];
 }
