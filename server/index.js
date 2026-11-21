@@ -102,6 +102,7 @@ app.post('/api/usage/reset', owner, (req, res) => { delete store.db.usage; store
 // Voice self-test: makes one short clip and reports what happened.
 app.post('/api/voice/test', owner, async (req, res) => {
   const t0 = Date.now();
+  voice.refresh(); // re-check your voices and plan every time you press Test voice
   const id = await voice.synthesize('أهلا وسام، أنا فادي. هيك رح تسمعني بالـ meeting.', 'fadi');
   res.json({ ok: !!id, audio: id, ms: Date.now() - t0, ...voice.status() });
 });

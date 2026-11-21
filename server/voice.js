@@ -204,4 +204,7 @@ function speakInChunks(text, agentId, onChunk) {
 const status = () => ({ enabled: enabled(), provider: lastProvider, azure: hasAzure(), elevenlabs: hasEleven(), gemini: hasGemini(), voices: elevenVoices.count || null,
   builtInOnly: libraryBlocked.key === process.env.ELEVENLABS_API_KEY && Date.now() - libraryBlocked.at < 3600e3, lastError });
 
-module.exports = { synthesize, speakInChunks, clips, enabled, status };
+// Forget cached voice choices (e.g. right after upgrading the ElevenLabs plan) so the next clip re-checks.
+function refresh() { elevenVoices = { key: null, at: 0, map: {} }; libraryBlocked = { key: null, at: 0 }; }
+
+module.exports = { synthesize, speakInChunks, clips, enabled, status, refresh };
