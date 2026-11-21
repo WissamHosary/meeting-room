@@ -1,5 +1,5 @@
 // The agents' brain.
-// 1) If a free/paid AI key is configured (Gemini, Groq, Ollama, Claude) agents talk fully naturally.
+// 1) With a Claude API key, agents think with Claude (official Anthropic SDK).
 // 2) With no key, the built-in "office brain" still works: real task status, memories, live news, research.
 const store = require('./store');
 const { team, places, routineFor } = require('./team');
@@ -105,108 +105,18 @@ function bestTaskMatch(text, list) {
 }
 
 // ---------- AI providers ----------
+// Claude is the only AI brain. Without a key (or when told to), the built-in office brain answers.
 function provider() {
   const want = (process.env.AI_PROVIDER || 'auto').toLowerCase();
-  const avail = {
-    claude: !!process.env.ANTHROPIC_API_KEY,
-    gemini: !!process.env.GEMINI_API_KEY,
-    groq: !!process.env.GROQ_API_KEY,
-    ollama: !!process.env.OLLAMA_MODEL,
-  };
-  if (want !== 'auto') return avail[want] ? want : 'offline';
-  return ['claude', 'gemini', 'groq', 'ollama'].find((p) => avail[p]) || 'offline';
-}
-
-// Ask Google which models this key can use. Order: newest stable flash first, then older flash,
-// then "latest" aliases and lite models. If one is busy (high demand / rate limit) we try the next.
-let geminiList = { key: null, models: [], at: 0 };
-let geminiWorking = { model: null, until: 0 };
-async function geminiCandidates() {
-  const key = process.env.GEMINI_API_KEY;
-  if (geminiList.key === key && geminiList.models.length && Date.now() - geminiList.at < 6 * 3600e3) return geminiList.models;
-  let names = [];
-  try {
-    const j = await (await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${key}`, { signal: AbortSignal.timeout(10000) })).json();
-    names = (j.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m) => m.name.replace('models/', ''));
-  } catch (e) { console.warn('[gemini] could not list models:', e.message); }
-  const ver = (n) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
-  const byVer = (a, b) => ver(b) - ver(a);
-  const flash = names.filter((n) => /^gemini-\d+(\.\d+)?-flash$/.test(n)).sort(byVer);
-  const lite = names.filter((n) => /^gemini-\d+(\.\d+)?-flash-lite$/.test(n)).sort(byVer);
-  // two best flash models, then fast lite models (reliable, ~1s), then everything else
-  // fast "lite" models first (about 1-2s, best for live conversation), then the bigger flash models
-  const models = [...new Set([...lite.slice(0, 2), ...names.filter((n) => n === 'gemini-flash-lite-latest'), ...flash.slice(0, 2), ...lite.slice(2), ...flash.slice(2), ...names.filter((n) => n === 'gemini-flash-latest')])];
-  if (!models.length) models.push('gemini-flash-lite-latest', 'gemini-flash-latest');
-  geminiList = { key, models, at: Date.now() };
-  return models;
-}
-const BUSY = new Set([429, 500, 503, 504, 404]);
-async function geminiCall(system, user) {
-  const key = process.env.GEMINI_API_KEY;
-  const all = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : await geminiCandidates();
-  // try the model that worked recently first
-  if (!geminiWorking.model && store.db.settings?._geminiWorking) geminiWorking = { model: store.db.settings._geminiWorking, until: Date.now() + 6 * 3600e3 };
-  const order = geminiWorking.model && Date.now() < geminiWorking.until ? [geminiWorking.model, ...all.filter((m) => m !== geminiWorking.model)] : all;
-  let lastErr = 'no models available';
-  const deadline = Date.now() + 35000; // never keep anyone waiting longer than this
-  for (const model of order.slice(0, 6)) {
-    const left = deadline - Date.now();
-    if (left < 2000) break;
-    try {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(Math.min(/lite/.test(model) ? 15000 : 7000, left)),
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 1500 } }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (r.ok) {
-        const text = j.candidates?.[0]?.content?.parts?.filter((x) => !x.thought).map((x) => x.text || '').join('') || '';
-        if (!text.trim()) { lastErr = `${model} returned an empty answer`; continue; }
-        if (geminiWorking.model !== model) {
-          console.log(`[gemini] using ${model}`);
-          (store.db.settings ||= {})._geminiWorking = model; store.save(); // remembered after the server sleeps
-        }
-        geminiWorking = { model, until: Date.now() + 6 * 3600e3 };
-        return { text, model };
-      }
-      lastErr = `${model}: ${j.error?.message || r.statusText}`;
-      if (r.status === 400 || r.status === 401 || r.status === 403) throw new Error(lastErr); // bad key: don't keep trying
-      if (!BUSY.has(r.status)) continue;
-      console.warn(`[gemini] ${model} busy (${r.status}), trying next`);
-    } catch (e) {
-      if (/API key|PERMISSION|400|401|403/i.test(e.message)) throw e;
-      lastErr = `${model}: ${e.name === 'TimeoutError' ? 'timed out' : e.message}`;
-      console.warn(`[gemini] ${lastErr}, trying next`);
-    }
-  }
-  throw new Error(lastErr);
+  if (want === 'offline') return 'offline';
+  return process.env.ANTHROPIC_API_KEY ? 'claude' : 'offline';
 }
 
 async function callLLM(system, user, opts = {}) {
   const p = opts.provider || provider();
-  const timeout = AbortSignal.timeout(45000);
-  if (p === 'gemini') return (await geminiCall(system, user)).text;
-  if (p === 'groq') {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST', signal: timeout,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-      body: JSON.stringify({ model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', temperature: 0.8, max_tokens: 600, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error?.message || r.statusText);
-    return j.choices?.[0]?.message?.content || '';
-  }
-  if (p === 'ollama') {
-    const r = await fetch(`${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/chat`, {
-      method: 'POST', signal: AbortSignal.timeout(120000), headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: process.env.OLLAMA_MODEL, stream: false, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
-    });
-    const j = await r.json();
-    return j.message?.content || '';
-  }
   if (p === 'claude') return claudeCall(system, user, opts);
   throw new Error('offline');
 }
-
 // ---------- Claude (official Anthropic SDK) ----------
 const AnthropicSDK = require('@anthropic-ai/sdk');
 const Anthropic = AnthropicSDK.default || AnthropicSDK.Anthropic || AnthropicSDK;
@@ -432,9 +342,8 @@ function offline(agent, text, { clientId, tools, speaker, isOwner, mode }) {
 async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true }) {
   const agent = byId[agentId];
   const tools = await gatherTools(agent, text);
-  // Claude first; if it fails (no credit, bad key, outage) try Gemini, then the built-in office brain.
+  // Claude; if it fails (no credit, bad key, outage) the built-in office brain answers.
   const chain = [provider()];
-  if (chain[0] !== 'gemini' && chain[0] !== 'offline' && process.env.GEMINI_API_KEY) chain.push('gemini');
   for (const p of chain) {
     if (p === 'offline') break;
     try {
@@ -472,7 +381,7 @@ async function testBrain() {
   if (p === 'offline') return { ok: false, provider: p, error: 'No AI key set' };
   try {
     const text = await callLLM('You are Fadi, a friendly general manager. Reply in one short sentence.', 'Wissam just connected your brain. Say hi to him.');
-    return { ok: true, provider: p, model: p === 'gemini' ? geminiWorking.model : p === 'claude' ? (lastClaudeUsage?.model || claudeModel()) : undefined, text: text.trim() };
+    return { ok: true, provider: p, model: lastClaudeUsage?.model || claudeModel(), text: text.trim() };
   } catch (e) { return { ok: false, provider: p, error: e.message }; }
 }
 

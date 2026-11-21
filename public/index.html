@@ -161,16 +161,14 @@
     <!-- Settings -->
     <section id="view-settings" class="view hidden">
       <h1>Settings</h1>
-      <p class="sub">Give your team a real brain. Gemini is free: get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>, paste it here and save.</p>
+      <p class="sub">Your team thinks with <b>Claude</b>. Gemini is used only to read their replies out loud (free).</p>
       <form class="card grid" id="settingsForm" style="max-width:640px">
         <div><label for="sLanguage">Team language</label>
           <select id="sLanguage"><option value="lebanese">Lebanese Arabic (لبناني)</option><option value="mirror">Same language as the speaker</option><option value="english">English</option></select></div>
         <div><label for="sProvider">Brain</label>
-          <select id="sProvider"><option value="auto">Automatic (best key available)</option><option value="gemini">Google Gemini (free)</option><option value="groq">Groq (free)</option><option value="claude">Claude (paid)</option><option value="offline">Office brain only (no AI)</option></select></div>
-        <div><label for="sGemini">Gemini API key <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Paste your free Gemini key"></div>
-        <div><label for="sGroq">Groq API key (optional) <span id="sGroqNow"></span></label><input id="sGroq" type="password" autocomplete="off" placeholder="Optional"></div>
+          <select id="sProvider"><option value="auto">Claude</option><option value="offline">Office brain only (no AI, for testing)</option></select></div>
         <h3 style="margin:10px 0 0">Claude brain (best quality)</h3>
-        <p class="sub" style="margin:0">Your claude.ai plan doesn't cover apps like this one. Create an API key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (add a few dollars of credit under Billing), paste it here and save. Agents then think with Claude, and voices keep using Gemini.</p>
+        <p class="sub" style="margin:0">Your claude.ai plan doesn't cover apps like this one. Create an API key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (add a few dollars of credit under Billing), paste it here and save. Agents then think with Claude.</p>
         <div><label for="sClaude">Claude API key <span id="sClaudeNow"></span></label><input id="sClaude" type="password" autocomplete="off" placeholder="sk-ant-..."></div>
         <div><label for="sClaudeModel">Claude model</label>
           <select id="sClaudeModel">
@@ -178,6 +176,8 @@
             <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster, half the price)</option>
             <option value="claude-haiku-5-5">Claude Haiku 5.5 (fastest, cheapest)</option>
           </select></div>
+        <h3 style="margin:10px 0 0">Voices</h3>
+        <div><label for="sGemini">Gemini key, for voices only <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Free key from aistudio.google.com/apikey"></div>
         <h3 style="margin:10px 0 0">Calls: audio relay (so clients on other networks can hear you)</h3>
         <p class="sub" style="margin:0">Free Cloudflare TURN: in the Cloudflare dashboard open <b>Realtime → TURN Server → Create</b>, then copy the <b>Turn Token ID</b> and <b>API Token</b> here. Or use a free Metered account.</p>
         <div class="row" style="align-items:end">
@@ -189,7 +189,7 @@
           <div style="flex:1;min-width:200px"><label for="sMetKey">Metered API key <span id="sMetKeyNow"></span></label><input id="sMetKey" type="password" autocomplete="off"></div>
         </div>
         <div class="row"><button type="button" class="btn" id="sTestRelay">Test call relay</button><span id="sRelayResult" class="sub" style="margin:0" aria-live="polite"></span></div>
-        <div class="row"><button class="btn primary">Save and test</button><button type="button" class="btn" id="sTest">Test brain</button><button type="button" class="btn ghost" id="sClearGemini">Remove Gemini key</button></div>
+        <div class="row"><button class="btn primary">Save and test</button><button type="button" class="btn" id="sTest">Test brain</button><button type="button" class="btn ghost" id="sClearGemini">Remove voice key</button></div>
         <div id="sResult" class="sub" style="margin:0" aria-live="polite"></div>
       </form>
     </section>

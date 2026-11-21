@@ -281,16 +281,16 @@
     const now = (v, k) => (v ? `· saved ${v}${s.fromHost.includes(k) ? ' (set on server)' : ''}` : '· not set');
     $('#sCfIdNow').textContent = now(s.cfTurnId, 'CF_TURN_KEY_ID'); $('#sCfTokNow').textContent = now(s.cfTurn, 'CF_TURN_TOKEN');
     $('#sMetDomNow').textContent = s.meteredDomain ? `· ${s.meteredDomain}` : '· not set'; $('#sMetKeyNow').textContent = now(s.metered, 'METERED_API_KEY');
-    $('#sGeminiNow').textContent = now(s.gemini, 'GEMINI_API_KEY'); $('#sGroqNow').textContent = now(s.groq, 'GROQ_API_KEY'); $('#sClaudeNow').textContent = now(s.claude, 'ANTHROPIC_API_KEY');
+    $('#sGeminiNow').textContent = now(s.gemini, 'GEMINI_API_KEY'); $('#sClaudeNow').textContent = now(s.claude, 'ANTHROPIC_API_KEY');
   }
   $('#settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('#sResult').textContent = 'Saving and testing…';
     const body = { provider: $('#sProvider').value, language: $('#sLanguage').value, claudeModel: $('#sClaudeModel').value };
-    for (const [k, id] of [['gemini', '#sGemini'], ['groq', '#sGroq'], ['claude', '#sClaude'], ['cfTurnId', '#sCfId'], ['cfTurn', '#sCfTok'], ['meteredDomain', '#sMetDom'], ['metered', '#sMetKey']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
+    for (const [k, id] of [['gemini', '#sGemini'], ['claude', '#sClaude'], ['cfTurnId', '#sCfId'], ['cfTurn', '#sCfTok'], ['meteredDomain', '#sMetDom'], ['metered', '#sMetKey']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
     try {
       const r = await api('/api/settings', { method: 'POST', body });
-      ['#sGemini', '#sGroq', '#sClaude', '#sCfId', '#sCfTok', '#sMetDom', '#sMetKey'].forEach((id) => { $(id).value = ''; });
+      ['#sGemini', '#sClaude', '#sCfId', '#sCfTok', '#sMetDom', '#sMetKey'].forEach((id) => { $(id).value = ''; });
       showTest(r.test);
     } catch (err) { showTest({ ok: false, error: err.message }); }
     loadSettings(); loadTeam();
