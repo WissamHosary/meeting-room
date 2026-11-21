@@ -26,7 +26,7 @@
   // slim icon rail: labels show when you hover it
   document.querySelectorAll('.nav button').forEach((b) => { const t = [...b.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()); if (t) { const sp = document.createElement('span'); sp.className = 'lbl'; sp.textContent = t.textContent.trim(); b.replaceChild(sp, t); b.title = sp.textContent; } });
   // floating chat dock over the office
-  const setDock = (open) => { document.querySelector('.boardroom').classList.toggle('dock-closed', !open); $('#dcOpen').classList.toggle('hidden', open); $('#dcToggle').setAttribute('aria-expanded', open); };
+  const setDock = (open) => { document.querySelector('.boardroom').classList.toggle('dock-closed', !open); world?.setInset?.(open ? 426 : 0); $('#dcOpen').classList.toggle('hidden', open); $('#dcToggle').setAttribute('aria-expanded', open); };
   $('#dcToggle').addEventListener('click', () => setDock(false));
   $('#dcOpen').addEventListener('click', () => setDock(true));
   // Beirut clock under the title (the office light follows it)
@@ -58,7 +58,7 @@
       if (!W) throw new Error('3D engine did not load');
       const w = W.init($('#world'), { onAgentClick: (id) => { const a = byId(id); world?.focus?.(id); setDock(true); $('#input').value = `${a.name}, `; $('#input').focus(); } });
       await w.load(TEAM);
-      world = w;
+      world = w; w.setInset?.(document.querySelector('.boardroom').classList.contains('dock-closed') ? 0 : 426);
       $('#worldLoading').remove();
       document.querySelectorAll('[data-cam]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-cam]').forEach((x) => x.classList.toggle('active', x === b)); w.view(b.dataset.cam); }));
     } catch (e) {

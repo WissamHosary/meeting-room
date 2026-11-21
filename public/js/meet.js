@@ -106,6 +106,7 @@
         if (!R) throw new Error('3D engine unavailable');
         room = R.createRoom($('#room3d'), { title: meeting.title, client: meeting.clientName || '' });
         room.setAgents(agents.map(byId).filter(Boolean));
+        room.setInset?.($('#meet').classList.contains('side-closed') ? 0 : 396);
       } catch (e) { console.warn(e); $('#stageFallback').classList.remove('hidden'); }
     })();
 
@@ -171,7 +172,8 @@
       $('#chatForm').classList.toggle('hidden', b.dataset.tab !== 'chat');
     }));
     personCard('self', name, local, true);
-    const toggleSide = () => $('#meet').classList.toggle('side-closed');
+    const syncInset = () => room?.setInset?.($('#meet').classList.contains('side-closed') ? 0 : 396);
+    const toggleSide = () => { $('#meet').classList.toggle('side-closed'); syncInset(); };
     $('#chatToggle').addEventListener('click', toggleSide); $('#sideClose').addEventListener('click', toggleSide);
 
     // ---------- conversation ----------
