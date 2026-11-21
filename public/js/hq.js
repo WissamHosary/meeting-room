@@ -23,6 +23,15 @@
   let voiceOn = true;
 
   // ---------- navigation ----------
+  // slim icon rail: labels show when you hover it
+  document.querySelectorAll('.nav button').forEach((b) => { const t = [...b.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()); if (t) { const sp = document.createElement('span'); sp.className = 'lbl'; sp.textContent = t.textContent.trim(); b.replaceChild(sp, t); b.title = sp.textContent; } });
+  // floating chat dock over the office
+  const setDock = (open) => { document.querySelector('.boardroom').classList.toggle('dock-closed', !open); $('#dcOpen').classList.toggle('hidden', open); $('#dcToggle').setAttribute('aria-expanded', open); };
+  $('#dcToggle').addEventListener('click', () => setDock(false));
+  $('#dcOpen').addEventListener('click', () => setDock(true));
+  // Beirut clock under the title (the office light follows it)
+  const tickClock = () => { try { const t = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Beirut', hour: '2-digit', minute: '2-digit' }).format(new Date()); const h = +t.slice(0, 2); const part = h < 5 ? 'Late night' : h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : h < 20 ? 'Sunset' : 'Evening'; $('#clockLine').textContent = `${part} in Beirut · ${t} · click someone to talk`; } catch {} };
+  tickClock(); setInterval(tickClock, 30000);
   document.querySelectorAll('.nav button').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('.nav button').forEach((x) => x.classList.toggle('active', x === b));
     document.querySelectorAll('main > section').forEach((s) => s.classList.add('hidden'));
@@ -47,7 +56,7 @@
     const W = window.World || await new Promise((res) => { addEventListener('world-ready', () => res(window.World), { once: true }); setTimeout(() => res(null), 10000); });
     try {
       if (!W) throw new Error('3D engine did not load');
-      const w = W.init($('#world'), { onAgentClick: (id) => { const a = byId(id); $('#input').value = `${a.name}, `; $('#input').focus(); } });
+      const w = W.init($('#world'), { onAgentClick: (id) => { const a = byId(id); world?.focus?.(id); setDock(true); $('#input').value = `${a.name}, `; $('#input').focus(); } });
       await w.load(TEAM);
       world = w;
       $('#worldLoading').remove();
@@ -148,6 +157,7 @@
       }
       vcWasThinking = s === 'thinking';
       if (s === 'thinking') { $('#vState').textContent = 'Thinking…'; $('#vHeard').textContent = `You: ${extra}`; }
+      if (s === 'checking') { $('#vOrb').className = 'orb listening'; $('#vState').textContent = 'You’re talking… I’m listening'; return; }
       if (s === 'speaking') { $('#vState').textContent = `${byId(extra)?.name || 'Agent'} is speaking… talk anytime to interrupt`; }
       if (s === 'off') $('#voicePanel').classList.add('hidden');
       if (s === 'error') { $('#voicePanel').classList.add('hidden'); toast(extra, 4000); }

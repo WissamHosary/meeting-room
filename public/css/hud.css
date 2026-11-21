@@ -1,0 +1,100 @@
+/* =====================================================================
+   HQ v3: full-screen office with a glass HUD, slim icon rail, floating chat
+   ===================================================================== */
+:root { --bg: #0a0710; --glass-bg: rgba(16, 11, 24, .64); --glass-strong: rgba(13, 9, 20, .84); --hair: rgba(255, 255, 255, .08); --hair-2: rgba(255, 255, 255, .14); --muted: #a99fba; }
+body { background: radial-gradient(1200px 800px at 80% -20%, rgba(138, 92, 246, .16), transparent 60%), radial-gradient(900px 600px at -10% 110%, rgba(251, 212, 4, .06), transparent 60%), #0a0710; }
+.hq { grid-template-columns: 76px 1fr; }
+.side { position: relative; z-index: 20; width: 76px; padding: 16px 12px; gap: 2px; background: rgba(11, 7, 17, .9); backdrop-filter: blur(24px) saturate(150%); border-right: 1px solid var(--hair); transition: width .25s cubic-bezier(.2, .8, .2, 1), box-shadow .25s; overflow: hidden; }
+.side:hover, .side:focus-within { width: 244px; box-shadow: 24px 0 70px rgba(0, 0, 0, .5); }
+.brand { padding: 2px 6px 20px; gap: 14px; white-space: nowrap; }
+.brand .bt, .nav button .lbl, .side .foot { opacity: 0; transition: opacity .18s; }
+.side:hover .bt, .side:hover .lbl, .side:hover .foot, .side:focus-within .bt, .side:focus-within .lbl, .side:focus-within .foot { opacity: 1; }
+.nav { display: grid; gap: 2px; }
+.nav button { min-height: 46px; padding: 0 15px; gap: 16px; border-radius: 14px; white-space: nowrap; color: var(--muted); }
+.nav button svg { width: 20px; height: 20px; flex: none; }
+.nav button:hover { background: rgba(255, 255, 255, .06); }
+.nav button.active { background: linear-gradient(90deg, rgba(251, 212, 4, .18), rgba(251, 212, 4, .04)); }
+.nav button.active::before { left: -12px; }
+.side .foot { white-space: nowrap; border-top-color: var(--hair); padding: 12px 4px 0; }
+
+/* the office fills the screen; everything else floats on glass */
+.boardroom { position: relative; display: block; height: 100vh; overflow: hidden; }
+.boardroom .world { position: absolute; inset: 0; border: 0; background: #0b0710; }
+.world-ui .room-title { left: 20px; top: 18px; padding: 12px 16px; border-radius: 18px; background: var(--glass-bg); backdrop-filter: blur(20px) saturate(150%); border: 1px solid var(--hair); text-shadow: none; }
+.world-ui .room-title h1 { font-size: 19px; }
+.world-ui .room-title p { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.views { left: 20px; right: auto; top: auto; bottom: 18px; max-width: calc(100% - 470px); justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; padding: 5px; gap: 2px; border-radius: 999px; background: var(--glass-strong); backdrop-filter: blur(20px) saturate(150%); border: 1px solid var(--hair); box-shadow: 0 14px 40px rgba(0, 0, 0, .35); scrollbar-width: none; }
+.views::-webkit-scrollbar { display: none; }
+.views button { flex: none; border: 0; background: transparent; min-height: 34px; padding: 0 14px; color: var(--muted); font-weight: 500; backdrop-filter: none; }
+.views button:hover { background: rgba(255, 255, 255, .08); color: var(--text); border: 0; }
+.views button.active { background: var(--gold); color: var(--on-gold); font-weight: 600; }
+.boardroom.dock-closed .views { max-width: calc(100% - 40px); }
+.world-loading { gap: 14px; align-content: center; justify-items: center; font-size: 14px; letter-spacing: .02em; }
+.world-loading::before { content: ""; width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .12); border-top-color: var(--gold); animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.dock-chat { position: absolute; top: 16px; right: 16px; bottom: 16px; width: 410px; display: flex; flex-direction: column; z-index: 6; background: var(--glass-bg); backdrop-filter: blur(28px) saturate(160%); border: 1px solid var(--hair-2); border-radius: 24px; box-shadow: 0 30px 80px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .06); overflow: hidden; transition: transform .38s cubic-bezier(.2, .8, .2, 1), opacity .3s; }
+.boardroom.dock-closed .dock-chat { transform: translateX(calc(100% + 24px)); opacity: 0; pointer-events: none; }
+.dc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 10px 12px 18px; border-bottom: 1px solid var(--hair); }
+.dc-head b { display: block; font-size: 15px; font-weight: 600; }
+.dc-head span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.dc-head span::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.dc-head .btn.icon { width: 38px; min-height: 38px; border-color: transparent; }
+.dock-chat .chat { flex: 1; min-height: 0; padding: 16px 14px; gap: 12px; background: none; }
+.dock-chat .msg { max-width: 100%; gap: 10px; animation: rise .25s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+.dock-chat .msg .avatar { width: 30px; height: 30px; font-size: 11px; }
+.dock-chat .msg .who { font-size: 11.5px; }
+.dock-chat .msg .body { font-size: 14px; line-height: 1.55; padding: 9px 13px; background: rgba(255, 255, 255, .055); border: 1px solid var(--hair); backdrop-filter: none; box-shadow: none; border-radius: 4px 16px 16px 16px; min-width: 0; overflow-wrap: anywhere; }
+.dock-chat .msg.me .body { background: linear-gradient(135deg, rgba(251, 212, 4, .22), rgba(251, 212, 4, .09)); border-color: rgba(251, 212, 4, .3); border-radius: 16px 4px 16px 16px; }
+.dc-foot { border-top: 1px solid var(--hair); padding: 10px 12px 12px; background: rgba(8, 5, 13, .35); }
+.dc-foot .hint { padding: 0 4px 8px; font-size: 11.5px; line-height: 1.45; }
+.dock-chat .composer { padding: 0; border: 0; background: none; backdrop-filter: none; gap: 6px; }
+.dock-chat .composer input { min-height: 44px; border-radius: 14px; background: rgba(255, 255, 255, .05); border-color: var(--hair-2); }
+.dock-chat .composer select { min-height: 44px; padding: 0 8px; border-radius: 12px; background: rgba(255, 255, 255, .05); border-color: var(--hair-2); }
+.dock-chat .composer .btn { min-height: 44px; border-radius: 14px; }
+.dock-chat .composer .btn.icon, .dock-chat .composer .btn.primary { width: 44px; padding: 0; justify-content: center; flex: none; }
+.dock-chat .composer .btn.primary .lbl { display: none; }
+.dc-open { position: absolute; right: 16px; top: 16px; z-index: 6; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--hair-2); background: var(--glass-strong); backdrop-filter: blur(20px); color: var(--text); cursor: pointer; font-weight: 600; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); }
+.dc-open:hover { border-color: var(--gold); }
+.dc-open svg { width: 18px; height: 18px; color: var(--gold); }
+.voice-panel { left: calc((100% - 442px) / 2); bottom: 82px; width: min(560px, calc(100% - 500px)); background: var(--glass-strong); backdrop-filter: blur(24px) saturate(150%); border-color: var(--hair-2); border-radius: 22px; }
+.boardroom.dock-closed .voice-panel { left: 50%; width: min(560px, calc(100% - 40px)); }
+
+/* 3D name tags */
+.tag { flex-direction: row; align-items: center; gap: 6px; padding: 4px 11px 4px 7px; border-radius: 999px; background: rgba(12, 8, 18, .74); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(8px); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); font-size: 11.5px; }
+.tag i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px rgba(255, 255, 255, .16); flex: none; }
+.tag b { font-size: 11.5px; font-weight: 600; }
+.tag span { font-size: 10.5px; }
+.tag:hover span, .tag.speaking span, .tag.thinking span { display: inline; }
+.tag.speaking { background: var(--gold); border-color: var(--gold); color: var(--on-gold); box-shadow: 0 0 0 4px rgba(251, 212, 4, .2), 0 0 24px rgba(251, 212, 4, .55); }
+.tag.speaking i { background: var(--on-gold); animation: pulse .7s infinite; }
+
+/* other pages: calmer, cleaner surfaces */
+.view { padding: 36px 44px 60px; max-width: 1240px; }
+.view h1 { font-size: 28px; font-weight: 600; }
+.view .sub { font-size: 14px; max-width: 70ch; }
+.card { background: rgba(255, 255, 255, .035); border: 1px solid var(--hair); border-radius: 20px; backdrop-filter: blur(18px); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+.task { background: rgba(255, 255, 255, .04); border-color: var(--hair); }
+input[type=text], input[type=password], input:not([type]), select, textarea { background: rgba(255, 255, 255, .04); border-color: var(--hair-2); }
+.btn { border-color: var(--hair-2); background: rgba(255, 255, 255, .06); }
+.btn:hover { background: rgba(255, 255, 255, .1); }
+.btn.primary, .btn.on { background: linear-gradient(135deg, var(--gold), #ffbe0b); }
+
+@media (max-width: 900px) {
+  .hq { grid-template-columns: 1fr; }
+  .side, .side:hover, .side:focus-within { width: auto; box-shadow: none; padding: 8px 10px; }
+  .nav { display: flex; }
+  .nav button .lbl { opacity: 1; }
+  .nav button { padding: 0 12px; gap: 8px; }
+  .nav button.active::before { display: none; }
+  .boardroom { display: flex; flex-direction: column; height: calc(100vh - 62px); height: calc(100dvh - 62px); }
+  .boardroom .world { position: relative; inset: auto; height: 46%; flex: none; }
+  .dock-chat, .boardroom.dock-closed .dock-chat { position: relative; inset: auto; width: auto; flex: 1; min-height: 0; transform: none; opacity: 1; pointer-events: auto; border-radius: 22px 22px 0 0; border-bottom: 0; margin-top: -18px; }
+  #dcToggle, .dc-open { display: none !important; }
+  .views, .boardroom.dock-closed .views { left: 10px; right: 10px; bottom: 26px; max-width: none; }
+  .voice-panel, .boardroom.dock-closed .voice-panel { left: 50%; width: calc(100% - 20px); bottom: 74px; }
+  .world-ui .room-title { left: 10px; top: 10px; padding: 8px 12px; }
+  .view { padding: 20px 16px 40px; }
+}
+.msg .body, .bubble .bb, .subtitle, .heard, .voice-panel .vtext span { unicode-bidi: plaintext; text-align: start; }

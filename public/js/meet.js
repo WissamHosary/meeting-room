@@ -264,9 +264,10 @@
     const useCloud = local.getAudioTracks().length > 0 && await MR.cloudHearing(meetingId);
     let rec = useCloud ? MR.cloudEar({
       stream: local, meetingId, getLang: () => $('#lang').value,
-      canStart: () => talkingAgents.size === 0, // while an agent talks, the level watcher handles interruptions
-      onSpeech: () => heard('…', false),
-      onBusy: (b) => { if (b) heard('Understanding…', false); },
+      // also hears you while an agent talks: if your words aren't the agent's own echo, the agent stops
+      onSpeech: () => { if (talkingAgents.size) MR.duck(true); heard('…', false); },
+      onBusy: (b) => { if (b) heard('Understanding…', false); else MR.duck(false); },
+      onDrop: () => MR.duck(false),
       onFinal: (t) => { if (echoOrInterrupt(t)) return; heard(t, true); caption('self', t); say(t, 'voice'); },
       onFail: () => { const was = rec?.active; rec?.off(); rec = browserRec(); if (was) rec?.on(); toast('Cloud hearing unavailable, using the browser instead.', 3500); },
     }) : browserRec();

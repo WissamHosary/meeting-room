@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
 <link rel="stylesheet" href="/css/skin.css">
+<link rel="stylesheet" href="/css/hud.css">
 <meta name="theme-color" content="#0e0716">
 <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -27,7 +28,7 @@
 
 <div id="app" class="hq hidden">
   <aside class="side">
-    <div class="brand"><span class="mark" aria-hidden="true">M</span><div>Meeting Room<small>Wissam's HQ</small></div></div>
+    <div class="brand"><span class="mark" aria-hidden="true">M</span><div class="bt">Meeting Room<small>Wissam's HQ</small></div></div>
     <nav class="nav" aria-label="Sections">
       <button data-view="boardroom" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="5"/></svg>Boardroom</button>
       <button data-view="office"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/></svg>Living office</button>
@@ -47,7 +48,7 @@
     <section id="view-boardroom" class="boardroom">
       <div class="world" id="world">
         <div class="world-ui">
-          <div class="room-title"><h1>The Office</h1><p>Click someone or say their name. They'll walk to the boardroom to talk.</p></div>
+          <div class="room-title"><h1>The Office</h1><p id="clockLine">Click someone to talk, or just say their name.</p></div>
           <div class="views" role="group" aria-label="Camera">
             <button data-cam="overview" class="active">Overview</button><button data-cam="boardroom">Boardroom</button><button data-cam="desk">Desks</button><button data-cam="coffee">Coffee</button><button data-cam="cafeteria">Cafeteria</button><button data-cam="games">Games</button><button data-cam="gym">Gym</button><button data-cam="pool">Pool</button>
           </div>
@@ -65,17 +66,21 @@
         <div class="table"></div>
         <div id="seats"></div>
       </div>
+      <aside class="dock-chat" id="dockChat" aria-label="Team chat">
+      <header class="dc-head"><div><b>Team chat</b><span id="dcStatus">Everyone's here. Say a name to talk.</span></div><button type="button" class="btn icon ghost" id="dcToggle" aria-label="Hide chat" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></header>
       <div class="chat" id="chat" aria-live="polite"></div>
-      <div>
+      <div class="dc-foot">
         <div class="hint" id="hint">Tap the mic once for hands-free voice chat. Or type. Try: "Fadi, assign Ziad to build the QR menu for Wing House" · "Dana, remember that I prefer dark designs" · "Liwaa, what's new in AI?"</div>
         <form class="composer" id="composer">
           <button type="button" class="btn icon" id="micBtn" aria-label="Talk with your voice"></button>
           <select id="lang" aria-label="Speech language" style="width:auto"><option value="en-US">EN</option><option value="ar-LB">AR</option></select>
           <input id="input" placeholder="Talk to your team…" autocomplete="off" aria-label="Message">
           <button type="button" class="btn icon on" id="voiceBtn" aria-label="Team speaks out loud"></button>
-          <button class="btn primary" aria-label="Send"><span id="sendIcon"></span>Send</button>
+          <button class="btn primary" aria-label="Send"><span id="sendIcon"></span><span class="lbl">Send</span></button>
         </form>
       </div>
+      </aside>
+      <button type="button" class="dc-open hidden" id="dcOpen" aria-label="Show chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><span>Chat</span></button>
     </section>
 
     <!-- Living office -->
