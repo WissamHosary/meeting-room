@@ -277,6 +277,7 @@
     const s = await api('/api/settings');
     $('#sProvider').value = s.provider;
     $('#sLanguage').value = s.language || 'lebanese';
+    $('#sClaudeModel').value = s.claudeModel || 'claude-opus-5-5';
     const now = (v, k) => (v ? `· saved ${v}${s.fromHost.includes(k) ? ' (set on server)' : ''}` : '· not set');
     $('#sCfIdNow').textContent = now(s.cfTurnId, 'CF_TURN_KEY_ID'); $('#sCfTokNow').textContent = now(s.cfTurn, 'CF_TURN_TOKEN');
     $('#sMetDomNow').textContent = s.meteredDomain ? `· ${s.meteredDomain}` : '· not set'; $('#sMetKeyNow').textContent = now(s.metered, 'METERED_API_KEY');
@@ -285,7 +286,7 @@
   $('#settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('#sResult').textContent = 'Saving and testing…';
-    const body = { provider: $('#sProvider').value, language: $('#sLanguage').value };
+    const body = { provider: $('#sProvider').value, language: $('#sLanguage').value, claudeModel: $('#sClaudeModel').value };
     for (const [k, id] of [['gemini', '#sGemini'], ['groq', '#sGroq'], ['claude', '#sClaude'], ['cfTurnId', '#sCfId'], ['cfTurn', '#sCfTok'], ['meteredDomain', '#sMetDom'], ['metered', '#sMetKey']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
     try {
       const r = await api('/api/settings', { method: 'POST', body });

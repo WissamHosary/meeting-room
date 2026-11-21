@@ -181,8 +181,8 @@ async function geminiCall(system, user) {
   throw new Error(lastErr);
 }
 
-async function callLLM(system, user) {
-  const p = provider();
+async function callLLM(system, user, opts = {}) {
+  const p = opts.provider || provider();
   const timeout = AbortSignal.timeout(45000);
   if (p === 'gemini') return (await geminiCall(system, user)).text;
   if (p === 'groq') {
@@ -203,17 +203,50 @@ async function callLLM(system, user) {
     const j = await r.json();
     return j.message?.content || '';
   }
-  if (p === 'claude') {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', signal: timeout,
-      headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-5-5', max_tokens: 600, system, messages: [{ role: 'user', content: user }] }),
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error?.message || r.statusText);
-    return j.content?.map((x) => x.text || '').join('') || '';
-  }
+  if (p === 'claude') return claudeCall(system, user, opts);
   throw new Error('offline');
+}
+
+// ---------- Claude (official Anthropic SDK) ----------
+const AnthropicSDK = require('@anthropic-ai/sdk');
+const Anthropic = AnthropicSDK.default || AnthropicSDK.Anthropic || AnthropicSDK;
+let claudeClient = null, claudeKeyUsed = null;
+function claudeClientFor() {
+  if (!claudeClient || claudeKeyUsed !== process.env.ANTHROPIC_API_KEY) {
+    claudeClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 2, timeout: 60_000 });
+    claudeKeyUsed = process.env.ANTHROPIC_API_KEY;
+  }
+  return claudeClient;
+}
+const claudeModel = () => process.env.CLAUDE_MODEL || 'claude-opus-5-5';
+let lastClaudeUsage = null;
+// kb: the company knowledge, sent first and cached so every reply knows everything at a fraction of the cost.
+async function claudeCall(system, user, { kb } = {}) {
+  const model = claudeModel();
+  const systemBlocks = [];
+  if (kb) systemBlocks.push({ type: 'text', text: kb, cache_control: { type: 'ephemeral' } });
+  systemBlocks.push({ type: 'text', text: system });
+  const params = {
+    model, max_tokens: 2000, system: systemBlocks,
+    messages: [{ role: 'user', content: user }],
+    output_config: { effort: process.env.CLAUDE_EFFORT || 'low' }, // conversation: quick, natural replies
+  };
+  // Opus/Sonnet 5.5: if a request is ever declined, the API retries it on a fallback model automatically.
+  const withFallback = /^claude-(opus|sonnet)-5-5/.test(model);
+  const res = withFallback
+    ? await claudeClientFor().beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
+    : await claudeClientFor().messages.create(params);
+  lastClaudeUsage = { model: res.model, ...res.usage };
+  if (res.stop_reason === 'refusal') return 'معليش، ما فيني ساعد بهالشي. فيني ساعدك بشي تاني؟';
+  return res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+}
+
+// All company knowledge as one stable text block (office: everything; meetings: public entries only).
+function knowledgeText(mode) {
+  const items = (store.db.knowledge || []).filter((k) => mode !== 'meeting' || k.audience === 'public');
+  if (!items.length) return '';
+  return `COMPANY KNOWLEDGE (everything the team knows about Wissam's business and projects; use it naturally, never read it out like a document):\n\n` +
+    items.map((k) => `## ${k.title}\n${k.text}`).join('\n\n');
 }
 
 // ---------- context gathering (shared by AI + offline) ----------
@@ -261,7 +294,7 @@ function relevantKnowledge(question, items) {
   return [...new Set([...chosen, ...items.filter((k) => !TOPIC_HINTS.some(([, t]) => t.includes(k.title)) && !['What Mukafaah is', "Wissam's working style and preferences", 'The problem Mukafaah solves', 'Other projects (examples)'].includes(k.title) && k.text.length < 600)])];
 }
 
-function contextBlock({ agent, clientId, mode, meeting, question = '' }) {
+function contextBlock({ agent, clientId, mode, meeting, question = '', skipKnowledge = false }) {
   const lines = [];
   lines.push(`Now (Beirut): ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Beirut' })}. You are currently: ${places[placeOf(agent)]}.`);
   lines.push(`Setting: ${mode === 'meeting' ? `a live call${meeting?.title ? ` titled "${meeting.title}"` : ''}${clientId ? ` with client ${clientName(clientId)}` : ''}. Humans may include Wissam (your boss) and his client.` : 'the office team chat with Wissam (your boss).'}`);
@@ -273,7 +306,7 @@ function contextBlock({ agent, clientId, mode, meeting, question = '' }) {
     : agent.manager || agent.id === 'jad' || agent.id === 'karim' ? tasksFor({ clientId }) : tasksFor({ agentId: agent.id, clientId });
   lines.push('Task board (the ONLY source of truth for work status):\n' + (relevant.length ? relevant.map((t) => `- [${t.id}] ${byId[t.agent]?.name}: "${t.title}" for ${clientName(t.client)} — ${statusWord[t.status]}`).join('\n') : '- (no tasks)'));
   // company knowledge (Mukafaah, services, Wissam's style). In meetings only entries marked public.
-  const kb = relevantKnowledge(question, (store.db.knowledge || []).filter((k) => !inMeeting || k.audience === 'public'));
+  const kb = skipKnowledge ? [] : relevantKnowledge(question, (store.db.knowledge || []).filter((k) => !inMeeting || k.audience === 'public'));
   if (kb.length) lines.push('Company knowledge (use it, but never read it out like a document):\n' + kb.map((k) => `## ${k.title}\n${k.text}`).join('\n\n'));
   if (!inMeeting && store.db.clients.length) lines.push('Clients: ' + store.db.clients.map((c) => `${c.name}${c.notes ? ` (${c.notes})` : ''}`).join('; '));
   return lines.join('\n\n');
@@ -396,17 +429,22 @@ function offline(agent, text, { clientId, tools, speaker, isOwner, mode }) {
 async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true }) {
   const agent = byId[agentId];
   const tools = await gatherTools(agent, text);
-  const p = provider();
-  if (p !== 'offline') {
+  // Claude first; if it fails (no credit, bad key, outage) try Gemini, then the built-in office brain.
+  const chain = [provider()];
+  if (chain[0] !== 'gemini' && chain[0] !== 'offline' && process.env.GEMINI_API_KEY) chain.push('gemini');
+  for (const p of chain) {
+    if (p === 'offline') break;
     try {
       const toolText = tools?.kind === 'news' ? `\n\nLive news you just pulled on "${tools.topic}":\n` + tools.items.map((i) => `- ${i.title} (${i.source}, ${i.date})`).join('\n')
         : tools?.kind === 'research' ? `\n\nResearch you just pulled on "${tools.topic}":\n${tools.wiki ? `Wikipedia: ${tools.wiki.extract}\n` : ''}` + tools.items.map((i) => `- ${i.title} (${i.source})`).join('\n') : '';
       const convo = history.slice(-14).map((h) => `${h.name}: ${h.text}`).join('\n');
-      const user = `${contextBlock({ agent, clientId, mode, meeting, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\nReply now as ${agent.name}, speaking directly.`;
-      const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user), agent, isOwner);
+      // With Claude, the FULL knowledge goes into a cached system block instead of a per-question selection.
+      const useClaude = p === 'claude';
+      const user = `${contextBlock({ agent, clientId, mode, meeting, skipKnowledge: useClaude, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\nReply now as ${agent.name}, speaking directly.`;
+      const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user, useClaude ? { kb: knowledgeText(mode), provider: p } : { provider: p }), agent, isOwner);
       return { ...out, links: tools?.items?.length ? [tools.wiki && { title: `Wikipedia: ${tools.wiki.title}`, link: tools.wiki.url }, ...tools.items].filter(Boolean) : undefined, provider: p };
     } catch (e) {
-      console.warn(`[brain] ${p} failed, falling back to office brain:`, e.message);
+      console.warn(`[brain] ${p} failed, trying the next brain:`, e.message);
     }
   }
   return { ...offline(agent, text, { clientId, tools, speaker, isOwner, mode }), provider: 'offline' };
@@ -431,7 +469,7 @@ async function testBrain() {
   if (p === 'offline') return { ok: false, provider: p, error: 'No AI key set' };
   try {
     const text = await callLLM('You are Fadi, a friendly general manager. Reply in one short sentence.', 'Wissam just connected your brain. Say hi to him.');
-    return { ok: true, provider: p, model: p === 'gemini' ? geminiWorking.model : undefined, text: text.trim() };
+    return { ok: true, provider: p, model: p === 'gemini' ? geminiWorking.model : p === 'claude' ? (lastClaudeUsage?.model || claudeModel()) : undefined, text: text.trim() };
   } catch (e) { return { ok: false, provider: p, error: e.message }; }
 }
 
