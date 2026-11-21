@@ -107,14 +107,20 @@
   // voice in / voice out
   $('#micBtn').innerHTML = icons.mic; $('#voiceBtn').innerHTML = icons.speaker;
   $('#voiceBtn').addEventListener('click', () => { voiceOn = !voiceOn; $('#voiceBtn').classList.toggle('on', voiceOn); if (!voiceOn) speechSynthesis.cancel(); });
-  const rec = recognizer({
-    lang: $('#lang').value,
-    onInterim: (t) => { $('#input').value = t; },
-    onFinal: (t) => { $('#input').value = ''; send(t); },
-    onState: (on, err) => { $('#micBtn').classList.toggle('on', on); if (err) toast(err); },
+  // Push-to-talk: tap the mic, say one thing, it's sent when you stop talking. Tap again to send early.
+  const rec = null;
+  let listening = false;
+  $('#micBtn').addEventListener('click', async () => {
+    if (listening) { MR.listenOnce.stop?.(); return; }
+    listening = true; $('#micBtn').classList.add('on'); $('#input').placeholder = 'Listening… speak now';
+    speechSynthesis.cancel();
+    try {
+      const text = await MR.listenOnce({ lang: $('#lang').value, onInterim: (t) => { $('#input').value = t; } });
+      $('#input').value = '';
+      if (text) send(text); else toast("Didn't catch that. Tap the mic and try again.");
+    } catch (e) { toast(e.message, 4000); }
+    listening = false; $('#micBtn').classList.remove('on'); $('#input').placeholder = 'Talk to your team…';
   });
-  $('#micBtn').addEventListener('click', () => { if (!rec) return toast('Voice input needs Chrome or Edge'); rec.active ? rec.off() : rec.on(); });
-  $('#lang').addEventListener('change', () => rec?.setLang($('#lang').value));
 
   // ---------- living office ----------
   function renderOffice() {
@@ -233,16 +239,18 @@
     const s = await api('/api/settings');
     $('#sProvider').value = s.provider;
     const now = (v, k) => (v ? `· saved ${v}${s.fromHost.includes(k) ? ' (set on server)' : ''}` : '· not set');
+    $('#sCfIdNow').textContent = now(s.cfTurnId, 'CF_TURN_KEY_ID'); $('#sCfTokNow').textContent = now(s.cfTurn, 'CF_TURN_TOKEN');
+    $('#sMetDomNow').textContent = s.meteredDomain ? `· ${s.meteredDomain}` : '· not set'; $('#sMetKeyNow').textContent = now(s.metered, 'METERED_API_KEY');
     $('#sGeminiNow').textContent = now(s.gemini, 'GEMINI_API_KEY'); $('#sGroqNow').textContent = now(s.groq, 'GROQ_API_KEY'); $('#sClaudeNow').textContent = now(s.claude, 'ANTHROPIC_API_KEY');
   }
   $('#settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('#sResult').textContent = 'Saving and testing…';
     const body = { provider: $('#sProvider').value };
-    for (const [k, id] of [['gemini', '#sGemini'], ['groq', '#sGroq'], ['claude', '#sClaude']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
+    for (const [k, id] of [['gemini', '#sGemini'], ['groq', '#sGroq'], ['claude', '#sClaude'], ['cfTurnId', '#sCfId'], ['cfTurn', '#sCfTok'], ['meteredDomain', '#sMetDom'], ['metered', '#sMetKey']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
     try {
       const r = await api('/api/settings', { method: 'POST', body });
-      ['#sGemini', '#sGroq', '#sClaude'].forEach((id) => { $(id).value = ''; });
+      ['#sGemini', '#sGroq', '#sClaude', '#sCfId', '#sCfTok', '#sMetDom', '#sMetKey'].forEach((id) => { $(id).value = ''; });
       showTest(r.test);
     } catch (err) { showTest({ ok: false, error: err.message }); }
     loadSettings(); loadTeam();
@@ -250,6 +258,20 @@
   $('#sTest').addEventListener('click', async () => {
     $('#sResult').textContent = 'Testing…';
     try { showTest(await api('/api/settings/test', { method: 'POST' })); } catch (err) { showTest({ ok: false, error: err.message }); }
+  });
+  // Ask the relay server for a relayed route from this browser: if it gives one, calls across networks will work.
+  $('#sTestRelay').addEventListener('click', async () => {
+    $('#sRelayResult').textContent = 'Testing…';
+    try {
+      const ice = await (await fetch('/api/ice')).json();
+      if (!ice.relay) { $('#sRelayResult').innerHTML = '<span style="color:var(--warn)">No relay set yet. Calls only work when people can connect directly (often fails on mobile data).</span>'; return; }
+      const pc = new RTCPeerConnection({ iceServers: ice.iceServers, iceTransportPolicy: 'relay' });
+      pc.createDataChannel('t'); let n = 0;
+      pc.onicecandidate = (e) => { if (e.candidate) n++; };
+      await pc.setLocalDescription(await pc.createOffer());
+      await new Promise((r) => setTimeout(r, 6000)); pc.close();
+      $('#sRelayResult').innerHTML = n ? '<span style="color:var(--ok)">Relay works. Clients on any network can hear you.</span>' : '<span style="color:var(--danger)">Relay did not answer. Check the keys.</span>';
+    } catch (err) { $('#sRelayResult').textContent = err.message; }
   });
   $('#sClearGemini').addEventListener('click', async () => { if (!confirm('Remove the saved Gemini key?')) return; await api('/api/settings', { method: 'POST', body: { gemini: '' } }); $('#sResult').textContent = 'Gemini key removed.'; loadSettings(); loadTeam(); });
 

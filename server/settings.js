@@ -2,7 +2,7 @@
 // (data/db.json locally, the Key-Value store in the cloud). Host environment variables always win.
 const store = require('./store');
 
-const KEYS = ['AI_PROVIDER', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'TREND_TOPICS'];
+const KEYS = ['AI_PROVIDER', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'TREND_TOPICS', 'CF_TURN_KEY_ID', 'CF_TURN_TOKEN', 'METERED_DOMAIN', 'METERED_API_KEY'];
 const fromHost = new Set(KEYS.filter((k) => process.env[k]));
 
 function load() {
@@ -24,6 +24,8 @@ function view() {
     provider: process.env.AI_PROVIDER || 'auto',
     gemini: mask(process.env.GEMINI_API_KEY), groq: mask(process.env.GROQ_API_KEY), claude: mask(process.env.ANTHROPIC_API_KEY),
     geminiModel: process.env.GEMINI_MODEL || '',
+    cfTurn: mask(process.env.CF_TURN_TOKEN), cfTurnId: process.env.CF_TURN_KEY_ID ? mask(process.env.CF_TURN_KEY_ID) : '',
+    metered: mask(process.env.METERED_API_KEY), meteredDomain: process.env.METERED_DOMAIN || '',
     fromHost: [...fromHost],
   };
 }

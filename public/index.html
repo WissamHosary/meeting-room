@@ -148,6 +148,17 @@
         <div><label for="sGemini">Gemini API key <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Paste your free Gemini key"></div>
         <div><label for="sGroq">Groq API key (optional) <span id="sGroqNow"></span></label><input id="sGroq" type="password" autocomplete="off" placeholder="Optional"></div>
         <div><label for="sClaude">Claude API key (optional, paid) <span id="sClaudeNow"></span></label><input id="sClaude" type="password" autocomplete="off" placeholder="Later, when you're ready to pay"></div>
+        <h3 style="margin:10px 0 0">Calls: audio relay (so clients on other networks can hear you)</h3>
+        <p class="sub" style="margin:0">Free Cloudflare TURN: in the Cloudflare dashboard open <b>Realtime → TURN Server → Create</b>, then copy the <b>Turn Token ID</b> and <b>API Token</b> here. Or use a free Metered account.</p>
+        <div class="row" style="align-items:end">
+          <div style="flex:1;min-width:200px"><label for="sCfId">Cloudflare Turn Token ID <span id="sCfIdNow"></span></label><input id="sCfId" type="password" autocomplete="off"></div>
+          <div style="flex:1;min-width:200px"><label for="sCfTok">Cloudflare API Token <span id="sCfTokNow"></span></label><input id="sCfTok" type="password" autocomplete="off"></div>
+        </div>
+        <div class="row" style="align-items:end">
+          <div style="flex:1;min-width:200px"><label for="sMetDom">Metered app domain <span id="sMetDomNow"></span></label><input id="sMetDom" placeholder="yourapp.metered.live" autocomplete="off"></div>
+          <div style="flex:1;min-width:200px"><label for="sMetKey">Metered API key <span id="sMetKeyNow"></span></label><input id="sMetKey" type="password" autocomplete="off"></div>
+        </div>
+        <div class="row"><button type="button" class="btn" id="sTestRelay">Test call relay</button><span id="sRelayResult" class="sub" style="margin:0" aria-live="polite"></span></div>
         <div class="row"><button class="btn primary">Save and test</button><button type="button" class="btn" id="sTest">Test brain</button><button type="button" class="btn ghost" id="sClearGemini">Remove Gemini key</button></div>
         <div id="sResult" class="sub" style="margin:0" aria-live="polite"></div>
       </form>

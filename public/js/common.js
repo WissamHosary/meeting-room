@@ -97,6 +97,31 @@
     };
   }
 
+  // Push-to-talk: listen for one sentence, resolve with the text ('' if nothing was heard).
+  function listenOnce({ lang = 'en-US', onInterim } = {}) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return Promise.reject(new Error('Voice needs Chrome or Edge (or Safari on iPhone)'));
+    return new Promise((resolve, reject) => {
+      const rec = new SR(); rec.lang = lang; rec.continuous = false; rec.interimResults = true; rec.maxAlternatives = 1;
+      let finalText = '', last = '';
+      rec.onresult = (e) => {
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t; else interim += t; }
+        last = (finalText + interim).trim(); onInterim?.(last);
+      };
+      rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') reject(new Error('Microphone permission denied')); };
+      rec.onend = () => resolve((finalText || last).trim());
+      try { rec.start(); } catch (e) { reject(e); }
+      listenOnce.stop = () => { try { rec.stop(); } catch {} };
+    });
+  }
+  // If nobody is named, address the manager so someone always answers a push-to-talk question.
+  function ensureAddressed(text, team) {
+    const low = text.toLowerCase();
+    const named = team.some((a) => (a.aliases || [a.name.toLowerCase()]).some((al) => (/[؀-ۿ]/.test(al) ? low.includes(al) : new RegExp(`(^|[^a-z])${al}([^a-z]|$)`, 'i').test(low))));
+    return named ? text : `Fadi, ${text}`;
+  }
+
   function toast(text, ms = 2600) {
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
     document.body.appendChild(t); setTimeout(() => t.remove(), ms);
@@ -113,5 +138,5 @@
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2A20 20 0 0 1 2.3 4.2 2 2 0 0 1 4.3 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8.1 9.7" transform="rotate(135 12 12)"/></svg>',
   };
 
-  window.MR = { KEY, api, esc, avatar, loadPortraits, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
+  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
 })();

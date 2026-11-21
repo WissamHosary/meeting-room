@@ -44,11 +44,28 @@
 
     // ---------- tiles ----------
     const stage = $('#stage');
+    // Some browsers block incoming sound until you tap the page: show a button when that happens.
+    function needTap() {
+      if (document.getElementById('tapToHear')) return;
+      const b = document.createElement('button');
+      b.id = 'tapToHear'; b.className = 'btn primary'; b.textContent = 'Tap to hear everyone';
+      b.style.cssText = 'position:fixed;left:50%;top:80px;transform:translateX(-50%);z-index:20;min-height:52px;font-size:16px';
+      b.addEventListener('click', () => { document.querySelectorAll('.tile video').forEach((v) => { if (!v.muted) v.play().catch(() => {}); }); b.remove(); });
+      document.body.appendChild(b);
+    }
+    function setStatus(id, text) {
+      const t = document.getElementById(`tile-${id}`); if (!t) return;
+      let s = t.querySelector('.status');
+      if (!text) { s?.remove(); return; }
+      if (!s) { s = document.createElement('div'); s.className = 'status'; s.style.cssText = 'position:absolute;right:10px;top:10px;background:rgba(0,0,0,.65);padding:3px 9px;border-radius:8px;font-size:12px'; t.appendChild(s); }
+      s.textContent = text;
+    }
     function humanTile(id, name, stream, self) {
       let t = document.getElementById(`tile-${id}`);
       if (!t) { t = document.createElement('div'); t.className = 'tile'; t.id = `tile-${id}`; stage.prepend(t); }
       t.innerHTML = `${avatar({ name, color: '#3a4250' }, 'xl')}<video autoplay playsinline ${self ? 'muted' : ''}></video><div class="label">${esc(name)}${self ? '<small>You</small>' : ''}</div>`;
       const v = t.querySelector('video');
+      if (stream && !self) { v.srcObject = stream; v.play().catch(() => needTap()); }
       if (stream) { v.srcObject = stream; const hasVideo = () => stream.getVideoTracks().some((tr) => tr.enabled && tr.readyState === 'live'); v.style.display = hasVideo() ? '' : 'none'; stream.onaddtrack = () => { v.style.display = hasVideo() ? '' : 'none'; }; }
       else v.style.display = 'none';
       return t;
@@ -106,15 +123,49 @@
       onInterim: (t) => caption(document.getElementById('tile-self'), t),
       onState: (on, err) => { if (err) toast(err); },
     });
-    if (rec && local.getAudioTracks().length) rec.on();
-    else if (!rec) toast('Live voice captions need Chrome or Edge. You can type instead.', 4000);
+    // On phones, speech captions take the microphone away from the call, so they start OFF there.
+    const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    let captionsOn = !!rec && !isPhone && local.getAudioTracks().length > 0;
+    const ccBtn = document.createElement('button');
+    ccBtn.className = 'btn round'; ccBtn.textContent = 'CC'; ccBtn.style.fontWeight = '700';
+    const syncCC = () => { ccBtn.classList.toggle('on', captionsOn); ccBtn.setAttribute('aria-label', captionsOn ? 'Turn off live captions (agents hear you)' : 'Turn on live captions so agents hear you'); ccBtn.title = captionsOn ? 'Live captions on: agents hear what you say' : 'Live captions off: type to talk to agents'; };
+    ccBtn.addEventListener('click', () => {
+      if (!rec) return toast('Live captions need Chrome or Edge. You can type to the agents instead.');
+      captionsOn = !captionsOn; syncCC();
+      const micOn = local.getAudioTracks()[0]?.enabled;
+      if (captionsOn && micOn) rec.on(); else rec.off();
+      if (captionsOn && isPhone) toast('On some phones captions can mute your mic for others. Turn CC off if they stop hearing you.', 5000);
+    });
+    $('#lang').before(ccBtn); syncCC();
+    if (captionsOn) rec.on();
+
+    // Push-to-talk to the agents: tap, speak one sentence, the agent answers out loud.
+    const pttBtn = document.createElement('button');
+    pttBtn.className = 'btn'; pttBtn.style.minHeight = '52px';
+    pttBtn.innerHTML = `${icons.mic}<span>Talk to agents</span>`;
+    pttBtn.setAttribute('aria-label', 'Talk to agents: tap and speak');
+    let listening = false;
+    pttBtn.addEventListener('click', async () => {
+      if (listening) { MR.listenOnce.stop?.(); return; }
+      listening = true; pttBtn.classList.add('on'); pttBtn.querySelector('span').textContent = 'Listening… tap to send';
+      const wasCaptions = captionsOn && rec?.active; if (wasCaptions) rec.off();
+      speechSynthesis.cancel();
+      try {
+        const text = await MR.listenOnce({ lang: $('#lang').value, onInterim: (t) => caption(document.getElementById('tile-self'), t) });
+        if (text) say(MR.ensureAddressed(text, TEAM.filter((a) => agents.includes(a.id))), 'voice');
+        else toast("Didn't catch that. Tap and try again.");
+      } catch (e) { toast(e.message, 4000); }
+      listening = false; pttBtn.classList.remove('on'); pttBtn.querySelector('span').textContent = 'Talk to agents';
+      if (wasCaptions && local.getAudioTracks()[0]?.enabled) rec.on();
+    });
+    $('#lang').after(pttBtn);
     $('#lang').addEventListener('change', () => rec?.setLang($('#lang').value));
 
     // ---------- controls ----------
     $('#micBtn').addEventListener('click', () => {
       const tr = local.getAudioTracks()[0]; if (!tr) return toast('No microphone');
       tr.enabled = !tr.enabled; $('#micBtn').classList.toggle('on', tr.enabled); $('#micBtn').classList.toggle('off', !tr.enabled);
-      tr.enabled ? rec?.on() : rec?.off();
+      tr.enabled && captionsOn ? rec?.on() : rec?.off();
     });
     $('#camBtn').addEventListener('click', () => {
       const tr = local.getVideoTracks()[0]; if (!tr) return toast('No camera');
@@ -169,30 +220,45 @@
     });
 
     // ---------- WebRTC mesh (free, peer to peer) ----------
-    const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
-    function makePeer(id, peerName) {
+    const ICE = await fetch('/api/ice').then((r) => r.json()).catch(() => ({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] }));
+    function makePeer(id, peerName, initiator = false) {
       const pc = new RTCPeerConnection(ICE);
       const stream = new MediaStream();
-      const p = { pc, name: peerName, stream };
+      const p = { pc, name: peerName, stream, initiator, restarts: 0 };
       peers.set(id, p);
       if (local.getAudioTracks().length) local.getAudioTracks().forEach((t) => pc.addTrack(t, local)); else pc.addTransceiver('audio', { direction: 'recvonly' });
       if (local.getVideoTracks().length) local.getVideoTracks().forEach((t) => pc.addTrack(t, local)); else pc.addTransceiver('video', { direction: 'recvonly' });
       pc.onicecandidate = (e) => e.candidate && socket.emit('rtc:signal', { to: id, data: { candidate: e.candidate } });
       pc.ontrack = (e) => { if (!stream.getTracks().includes(e.track)) stream.addTrack(e.track); humanTile(id, p.name, stream); mixIn(stream); };
-      pc.onconnectionstatechange = () => { if (['failed', 'closed'].includes(pc.connectionState)) dropPeer(id); };
+      pc.onconnectionstatechange = async () => {
+        const st = pc.connectionState;
+        if (st === 'connecting' || st === 'new') setStatus(id, 'Connecting…');
+        else if (st === 'connected') setStatus(id, '');
+        else if (st === 'disconnected') setStatus(id, 'Reconnecting…');
+        else if (st === 'failed') {
+          // try once more through the relay server before giving up
+          if (p.initiator && p.restarts < 2) {
+            p.restarts++; setStatus(id, 'Retrying…');
+            try { pc.restartIce(); await pc.setLocalDescription(await pc.createOffer({ iceRestart: true })); socket.emit('rtc:signal', { to: id, data: { sdp: pc.localDescription, name } }); } catch {}
+          } else setStatus(id, "Can't connect: network blocked");
+        }
+      };
       humanTile(id, peerName, null);
+      setStatus(id, 'Connecting…');
       renderAgents();
       return p;
     }
     function dropPeer(id) { const p = peers.get(id); if (!p) return; p.pc.close(); peers.delete(id); document.getElementById(`tile-${id}`)?.remove(); renderAgents(); }
 
-    socket.on('connect', () => socket.emit('meet:join', { meetingId, name, key: KEY }));
+    const join = () => socket.emit('meet:join', { meetingId, name, key: KEY });
+    socket.on('connect', join);
+    if (socket.connected) join();
     socket.on('meet:error', (m) => toast(m, 5000));
     socket.on('meet:welcome', async ({ peers: existing, agents: list, recording }) => {
       agents = list; renderAgents();
       $('#recBadge').classList.toggle('hidden', !recording);
       for (const ex of existing) { // newcomer calls everyone already in the room
-        const p = makePeer(ex.id, ex.name);
+        const p = makePeer(ex.id, ex.name, true);
         await p.pc.setLocalDescription(await p.pc.createOffer());
         socket.emit('rtc:signal', { to: ex.id, data: { sdp: p.pc.localDescription, name } });
       }
@@ -202,7 +268,7 @@
     socket.on('rtc:signal', async ({ from, data }) => {
       let p = peers.get(from);
       if (data.sdp) {
-        if (!p) p = makePeer(from, data.name || 'Guest');
+        if (!p) p = makePeer(from, data.name || 'Guest', false);
         await p.pc.setRemoteDescription(data.sdp);
         if (data.sdp.type === 'offer') { await p.pc.setLocalDescription(await p.pc.createAnswer()); socket.emit('rtc:signal', { to: from, data: { sdp: p.pc.localDescription, name } }); }
         (p.pending || []).forEach((c) => p.pc.addIceCandidate(c).catch(() => {})); p.pending = null;

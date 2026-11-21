@@ -32,12 +32,44 @@ const hasPhoto = (id) => fs.existsSync(path.join(__dirname, '..', 'public', 'ava
 const hasModel = (id) => fs.existsSync(path.join(__dirname, '..', 'public', 'models', `${id}.glb`));
 const teamView = () => team.map((a) => ({ look: a.look, photo: hasPhoto(a.id), model: hasModel(a.id), id: a.id, name: a.name, role: a.role, color: a.color, gender: a.gender, manager: !!a.manager, place: brain.placeOf(a), placeLabel: places[brain.placeOf(a)], aliases: a.aliases }));
 app.get('/api/team', (req, res) => res.json({ team: teamView(), places, provider: brain.provider() }));
+// Servers that help two devices find each other (STUN) and relay audio/video when a direct
+// connection is blocked, e.g. Wi-Fi <-> mobile data (TURN). Set TURN_URLS/TURN_USERNAME/TURN_CREDENTIAL
+// to use your own (e.g. a free Metered or Cloudflare TURN account); otherwise free public relays are used.
+let iceCache = { at: 0, key: '', servers: null };
+async function relayServers() {
+  const e = process.env;
+  const key = [e.CF_TURN_KEY_ID, e.CF_TURN_TOKEN, e.METERED_DOMAIN, e.METERED_API_KEY, e.TURN_URLS].join('|');
+  if (iceCache.servers && iceCache.key === key && Date.now() - iceCache.at < 3600e3) return iceCache.servers;
+  let servers = [];
+  try {
+    if (e.CF_TURN_KEY_ID && e.CF_TURN_TOKEN) { // Cloudflare TURN (free 1,000 GB/month)
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${e.CF_TURN_KEY_ID}/credentials/generate-ice-servers`, { method: 'POST', headers: { authorization: `Bearer ${e.CF_TURN_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify({ ttl: 86400 }), signal: AbortSignal.timeout(8000) });
+      const j = await r.json(); servers = j.iceServers ? [].concat(j.iceServers) : [];
+      if (!r.ok) console.warn('[turn] cloudflare:', JSON.stringify(j).slice(0, 200));
+    } else if (e.METERED_DOMAIN && e.METERED_API_KEY) { // Metered (free 20 GB/month)
+      const dom = e.METERED_DOMAIN.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      const r = await fetch(`https://${dom}/api/v1/turn/credentials?apiKey=${encodeURIComponent(e.METERED_API_KEY)}`, { signal: AbortSignal.timeout(8000) });
+      const j = await r.json(); servers = Array.isArray(j) ? j : [];
+      if (!r.ok) console.warn('[turn] metered:', JSON.stringify(j).slice(0, 200));
+    } else if (e.TURN_URLS) {
+      servers = [{ urls: e.TURN_URLS.split(',').map((s) => s.trim()), username: e.TURN_USERNAME, credential: e.TURN_CREDENTIAL }];
+    }
+  } catch (err) { console.warn('[turn] could not get relay credentials:', err.message); }
+  iceCache = { at: Date.now(), key, servers };
+  return servers;
+}
+app.get('/api/ice', async (req, res) => {
+  const relays = await relayServers();
+  res.json({ iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }, ...relays], relay: relays.length > 0 });
+});
 app.get('/api/whoami', (req, res) => res.json({ owner: isOwnerKey(req.get('x-owner-key')) }));
 
 app.get('/api/settings', owner, (req, res) => res.json(settings.view()));
 app.post('/api/settings', owner, async (req, res) => {
   const b = req.body || {};
-  settings.save({ AI_PROVIDER: b.provider, GEMINI_API_KEY: b.gemini, GROQ_API_KEY: b.groq, ANTHROPIC_API_KEY: b.claude, GEMINI_MODEL: b.geminiModel });
+  settings.save({ AI_PROVIDER: b.provider, GEMINI_API_KEY: b.gemini, GROQ_API_KEY: b.groq, ANTHROPIC_API_KEY: b.claude, GEMINI_MODEL: b.geminiModel,
+    CF_TURN_KEY_ID: b.cfTurnId, CF_TURN_TOKEN: b.cfTurn, METERED_DOMAIN: b.meteredDomain, METERED_API_KEY: b.metered });
+  iceCache.at = 0;
   io.to('office').emit('team:changed');
   res.json({ ...settings.view(), test: await brain.testBrain() });
 });
