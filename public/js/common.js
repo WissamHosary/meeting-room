@@ -160,14 +160,109 @@
     return fresh < 2 || fresh / h.length < 0.45;
   }
 
+  // ---------- cloud hearing: ElevenLabs Scribe (much better with Lebanese Arabic than the browser) ----------
+  // Is cloud hearing set up on the server? (owner, or anyone in an open meeting)
+  async function cloudHearing(meetingId = '') {
+    try { const r = await fetch(`/api/stt?m=${encodeURIComponent(meetingId)}`, { headers: { 'x-owner-key': KEY } }); return !!(await r.json()).ready; } catch { return false; }
+  }
+  // Listens on the mic, cuts out each thing you say (by voice detection, with a little audio from just before
+  // you started so no words are lost), and sends it to Scribe. Same on/off/setLang shape as recognizer().
+  function cloudEar({ stream = null, getLang, meetingId = '', onFinal, onSpeech, onBusy, onFail, canStart = () => true }) {
+    let want = false, own = null, actx = null, proc = null, src = null, floor = 0.006, chain = Promise.resolve(), failed = false;
+    const RATE = 16000, PRE = 2.0; // seconds of audio kept from before you started talking
+    let pre = [], preLen = 0, seg = null, loud = 0, quiet = 0, voiced = 0;
+    const toWav = (chunks) => {
+      const n = chunks.reduce((a, c) => a + c.length, 0), out = new DataView(new ArrayBuffer(44 + n * 2));
+      const w = (o, t) => { for (let i = 0; i < t.length; i++) out.setUint8(o + i, t.charCodeAt(i)); };
+      w(0, 'RIFF'); out.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+      out.setUint32(24, RATE, true); out.setUint32(28, RATE * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true); w(36, 'data'); out.setUint32(40, n * 2, true);
+      let o = 44; for (const c of chunks) for (let i = 0; i < c.length; i++, o += 2) { const v = Math.max(-1, Math.min(1, c[i])); out.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true); }
+      return new Blob([out], { type: 'audio/wav' });
+    };
+    function send(chunks) {
+      const blob = toWav(chunks), lang = (getLang?.() || '').slice(0, 2);
+      onBusy?.(true);
+      chain = chain.then(async () => {
+        try {
+          const r = await fetch(`/api/stt?m=${encodeURIComponent(meetingId)}&lang=${lang}`, { method: 'POST', headers: { 'content-type': 'audio/wav', 'x-owner-key': KEY }, body: blob });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok) { if (j.text && want) onFinal?.(j.text); }
+          else if (r.status === 503 || j.fallback) { if (!failed) { failed = true; onFail?.(j.error || 'cloud hearing unavailable'); } }
+        } catch {}
+        onBusy?.(false);
+      });
+    }
+    function block(e) {
+      if (!want) return;
+      const input = e.inputBuffer.getChannelData(0), ratio = actx.sampleRate / RATE, n = Math.floor(input.length / ratio), d = new Float32Array(n);
+      let sum = 0;
+      for (let i = 0; i < n; i++) { const v = input[Math.floor(i * ratio)]; d[i] = v; sum += v * v; }
+      const rms = Math.sqrt(sum / Math.max(1, n));
+      if (!seg) {
+        pre.push(d); preLen += n; while (preLen - pre[0].length > PRE * RATE) preLen -= pre.shift().length;
+        loud = rms > Math.max(floor * 3, 0.012) ? loud + 1 : 0;
+        if (loud < 2) { floor = floor * 0.95 + Math.min(rms, 0.05) * 0.05; return; }
+        if (!canStart()) { loud = 0; return; }
+        seg = pre.slice(); pre = []; preLen = 0; quiet = 0; voiced = loud; loud = 0; onSpeech?.();
+        return;
+      }
+      seg.push(d);
+      if (rms > Math.max(floor * 2, 0.008)) { quiet = 0; voiced++; } else quiet++;
+      const dur = seg.reduce((a, c) => a + c.length, 0) / RATE;
+      if (quiet * (n / RATE) >= 0.75 || dur > 25) { // you paused (or talked a long time): send it
+        const chunks = seg; seg = null; quiet = 0;
+        if (voiced >= 3) send(chunks);
+      }
+    }
+    async function start() {
+      try {
+        if (!stream) own = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+        const s = stream || own;
+        actx = new AudioContext(); await actx.resume().catch(() => {});
+        src = actx.createMediaStreamSource(new MediaStream(s.getAudioTracks()));
+        proc = actx.createScriptProcessor(4096, 1, 1); proc.onaudioprocess = block;
+        const mute = actx.createGain(); mute.gain.value = 0;
+        src.connect(proc); proc.connect(mute); mute.connect(actx.destination);
+      } catch (e) { want = false; onFail?.(speechErrorText('audio-capture')); }
+    }
+    function teardown() { try { proc && (proc.onaudioprocess = null); src?.disconnect(); proc?.disconnect(); } catch {} actx?.close().catch(() => {}); own?.getTracks().forEach((t) => t.stop()); actx = proc = src = own = null; seg = null; pre = []; preLen = 0; }
+    return {
+      on() { if (!want && !failed) { want = true; start(); } },
+      off() { want = false; teardown(); },
+      get active() { return want; },
+      get failed() { return failed; },
+      setLang() {}, pause() {},
+      cloud: true,
+    };
+  }
   // Hands-free voice conversation, like a voice assistant:
   // - listens continuously and sends what you said when you pause;
   // - while an agent thinks or speaks, an echo-cancelled mic keeps watching for YOUR voice;
   //   as soon as you talk over them they stop instantly and listen (barge-in), and they're told
   //   they were interrupted so the next answer is a natural follow-up.
-  function voiceChat({ getLang, onUtterance, onState, onInterim, onLevel }) {
+  function voiceChat({ getLang, onUtterance, onState, onInterim, onLevel, cloud = false }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return null;
+    if (!SR && !cloud) return null;
+    // cloud = ElevenLabs Scribe writes down what you say; the browser recognizer then only watches for interruptions
+    let cloudOn = cloud, ear = null, srBroken = false;
+    function makeEar() {
+      ear = cloudEar({
+        getLang, canStart: () => state === 'listening' || state === 'thinking',
+        onSpeech: () => { if (state === 'listening') onInterim?.('…'); },
+        onBusy: (b) => { if (b && state === 'listening' && !buffer) onInterim?.('Understanding…'); },
+        onFinal: heardCloud,
+        onFail: () => { ear?.off(); ear = null; cloudOn = false; if (!SR || srBroken) { stop(); onState?.('error', 'Cloud hearing stopped working. Open Settings and press Test voice.'); } else startRec(); },
+      });
+      ear.on();
+    }
+    function heardCloud(t) {
+      if (!active) return;
+      const agentText = lastSaid.get(speakingAgent) || '';
+      if ((state === 'speaking' || Date.now() - spokeUntil < 2500) && agentText && isEcho(t, agentText)) return; // the agent's own voice
+      if (state === 'speaking' || state === 'thinking') bargeIn();
+      buffer += ' ' + t; onInterim?.(buffer.trim());
+      clearTimeout(sendTimer); sendTimer = setTimeout(flush, 350);
+    }
     let active = false, rec = null, state = 'off', buffer = '', sendTimer = null, waitTimer = null, running = false;
     let speakingAgent = null, interrupted = null; // { agent, said } when you cut someone off
     // ---- voice activity detection on an echo-cancelled mic (so the agent's own voice doesn't trigger it)
@@ -206,7 +301,7 @@
     let spokeUntil = 0; // right after an agent stops, ignore the tail of its own voice
     const set = (s, extra) => { state = s; onState?.(s, extra); };
     function startRec() {
-      if (!active || running) return;
+      if (!active || running || !SR || srBroken) return;
       rec = new SR(); rec.lang = getLang(); rec.continuous = true; rec.interimResults = true;
       rec.onresult = (e) => {
         if (state === 'speaking' || state === 'thinking' || (state === 'listening' && Date.now() - spokeUntil < 2500)) {
@@ -215,17 +310,21 @@
           const agentText = lastSaid.get(speakingAgent) || '';
           if (state !== 'listening' || agentText) {
             if (isEcho(heard, state === 'thinking' ? '' : agentText)) return; // just the agent's voice: ignore
-            if (state !== 'listening') { bargeIn(); buffer = finals; onInterim?.(heard.trim()); return; } // a person talking: stop and listen (keep their words)
+            if (state !== 'listening') { bargeIn(); buffer = cloudOn ? '' : finals; onInterim?.(cloudOn ? '…' : heard.trim()); return; } // a person talking: stop and listen (keep their words)
           }
         }
-        if (state !== 'listening') return;
+        if (state !== 'listening' || cloudOn) return; // with cloud hearing, Scribe writes down what you say
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) buffer += ' ' + t; else interim += t; }
         onInterim?.((buffer + ' ' + interim).trim());
         clearTimeout(sendTimer);
         if (buffer.trim() && !interim.trim()) sendTimer = setTimeout(flush, 800); // you paused
       };
-      rec.onerror = (e) => { if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(e.error)) { stop(); onState?.('error', speechErrorText(e.error)); } };
+      rec.onerror = (e) => {
+        if (!['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(e.error)) return;
+        srBroken = true; if (cloudOn) return; // cloud hearing still works without the browser recognizer
+        stop(); onState?.('error', speechErrorText(e.error));
+      };
       rec.onend = () => { running = false; if (active && state !== 'off') setTimeout(startRec, 150); };
       try { rec.start(); running = true; } catch {}
     }
@@ -250,9 +349,11 @@
       if (on) { speakingAgent = id; set('speaking', id); startRec(); } // keep listening while they talk, so you can cut in
       else if (state === 'speaking') { spokeUntil = Date.now(); setTimeout(resume, 350); }
     });
-    function stop() { active = false; clearTimeout(sendTimer); clearTimeout(waitTimer); stopRec(); stopVad(); set('off'); }
+    function stop() { active = false; clearTimeout(sendTimer); clearTimeout(waitTimer); stopRec(); stopVad(); ear?.off(); ear = null; set('off'); }
     return {
-      async start() { if (active) return; active = true; buffer = ''; set('listening'); startRec(); await startVad(); },
+      async start() { if (active) return; active = true; buffer = ''; set('listening'); startRec(); if (cloudOn) makeEar(); await startVad(); },
+      get cloud() { return cloudOn; },
+      setCloud(on) { cloudOn = !!on; },
       stop,
       get active() { return active; },
       get state() { return state; },
@@ -342,5 +443,5 @@
     else p.timer = setTimeout(() => pendingVoice.delete(id), 30000);
   }
 
-  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, cancelVoices, isEcho, playClip, stopAudio, speakMessage, voiceArrived, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
+  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, cancelVoices, isEcho, playClip, stopAudio, speakMessage, voiceArrived, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, cloudHearing, cloudEar, toast, icons };
 })();

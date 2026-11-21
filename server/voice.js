@@ -201,10 +201,36 @@ function speakInChunks(text, agentId, onChunk) {
   list.forEach((piece, i) => synthesize(piece, agentId).then((id) => onChunk(i, list.length, id)).catch(() => onChunk(i, list.length, null)));
 }
 
+// ---------------- Speech-to-text: ElevenLabs Scribe (understands Lebanese Arabic far better than the browser) ----------------
+let sttModel = null, sttError = null, sttFailAt = 0;
+const sttReady = () => hasEleven() && process.env.STT_PROVIDER !== 'browser' && Date.now() - sttFailAt > 10 * 60e3;
+async function transcribe(audio, { lang = '', type = 'audio/wav' } = {}) {
+  if (!hasEleven()) throw new Error('no ElevenLabs key');
+  const models = sttModel ? [sttModel] : ['scribe_v2', 'scribe_v1'];
+  let last;
+  for (const model of models) {
+    const form = new FormData();
+    form.append('model_id', model);
+    form.append('file', new Blob([audio], { type }), type.includes('webm') ? 'speech.webm' : 'speech.wav');
+    if (lang) form.append('language_code', lang);
+    form.append('tag_audio_events', 'false');
+    form.append('diarize', 'false');
+    const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', { method: 'POST', headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY }, body: form, signal: AbortSignal.timeout(25000) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) { sttModel = model; sttError = null; return String(j.text || '').trim(); }
+    last = j.detail?.message || j.detail?.status || (typeof j.detail === 'string' ? j.detail : '') || `ElevenLabs ${r.status}`;
+    if (!/model/i.test(last) || r.status === 401) break; // only try the older model when the newer one isn't available
+  }
+  sttError = last;
+  if (/quota|credit|plan|subscription|unauthor|invalid api key|permission/i.test(last)) sttFailAt = Date.now(); // fall back to the browser for a while
+  throw new Error(last);
+}
+const sttStatus = () => ({ ready: sttReady(), model: sttModel, error: sttError });
+
 const status = () => ({ enabled: enabled(), provider: lastProvider, azure: hasAzure(), elevenlabs: hasEleven(), gemini: hasGemini(), voices: elevenVoices.count || null,
-  builtInOnly: libraryBlocked.key === process.env.ELEVENLABS_API_KEY && Date.now() - libraryBlocked.at < 3600e3, lastError });
+  stt: sttStatus(), builtInOnly: libraryBlocked.key === process.env.ELEVENLABS_API_KEY && Date.now() - libraryBlocked.at < 3600e3, lastError });
 
 // Forget cached voice choices (e.g. right after upgrading the ElevenLabs plan) so the next clip re-checks.
-function refresh() { elevenVoices = { key: null, at: 0, map: {} }; libraryBlocked = { key: null, at: 0 }; }
+function refresh() { sttFailAt = 0; sttError = null; elevenVoices = { key: null, at: 0, map: {} }; libraryBlocked = { key: null, at: 0 }; }
 
-module.exports = { synthesize, speakInChunks, clips, enabled, status, refresh };
+module.exports = { transcribe, sttReady, sttStatus, synthesize, speakInChunks, clips, enabled, status, refresh };

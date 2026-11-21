@@ -125,6 +125,7 @@
   let lastAgent = null;
   let vcWasThinking = false;
   const vc = MR.voiceChat({
+    cloud: true, // switched off on start if ElevenLabs hearing isn't available
     getLang: () => $('#lang').value,
     onInterim: (t) => { $('#vHeard').textContent = t; },
     onUtterance: (text, interrupted) => {
@@ -158,7 +159,10 @@
     if (vc.active) return vc.stop();
     voiceOn = true; $('#voiceBtn').classList.add('on');
     $('#voicePanel').classList.remove('hidden');
-    vc.start();
+    MR.cloudHearing().then((ok) => {
+      if (!ok && !(window.SpeechRecognition || window.webkitSpeechRecognition)) { $('#voicePanel').classList.add('hidden'); return toast('Voice chat needs Chrome or Edge, or ElevenLabs hearing in Settings.', 4500); }
+      vc.setCloud(ok); vc.start();
+    });
   });
   $('#vEnd').addEventListener('click', () => vc?.stop());
   $('#lang').addEventListener('change', () => vc?.restartLang());

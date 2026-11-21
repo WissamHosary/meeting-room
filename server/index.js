@@ -17,6 +17,7 @@ const PORT = Number(process.env.PORT || 3000);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 5e6 });
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '2mb' }));
 
 // ---------- owner key (only you can open HQ and control things) ----------
@@ -65,6 +66,24 @@ app.get('/api/ice', async (req, res) => {
   if (!isOwnerKey(req.get('x-owner-key')) && !openMeeting(String(req.query.m || ''))) return res.status(403).json({ error: 'meeting link required' });
   const relays = await relayServers();
   res.json({ iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }, ...relays], relay: relays.length > 0 });
+});
+// ---------- hearing: your speech -> text with ElevenLabs Scribe (owner, or anyone in an open meeting) ----------
+const sttCalls = new Map(); // ip -> recent call times (guests are rate limited)
+const sttAllowed = (req) => isOwnerKey(req.get('x-owner-key')) || !!openMeeting(String(req.query.m || ''));
+app.get('/api/stt', (req, res) => res.json({ ready: sttAllowed(req) && voice.sttReady() }));
+app.post('/api/stt', express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '8mb' }), async (req, res) => {
+  if (!sttAllowed(req)) return res.status(403).json({ error: 'meeting link required' });
+  if (!voice.sttReady()) return res.status(503).json({ error: 'cloud hearing unavailable' });
+  if (!isOwnerKey(req.get('x-owner-key'))) {
+    const now = Date.now(), list = (sttCalls.get(req.ip) || []).filter((t) => now - t < 60e3);
+    if (list.length >= 30) return res.status(429).json({ error: 'too many' });
+    list.push(now); sttCalls.set(req.ip, list);
+  }
+  if (!req.body?.length || req.body.length < 2000) return res.json({ text: '' });
+  try {
+    const lang = /^(ar|ara)/i.test(String(req.query.lang || '')) ? 'ara' : /^en/i.test(String(req.query.lang || '')) ? 'eng' : '';
+    res.json({ text: await voice.transcribe(req.body, { lang, type: req.get('content-type') || 'audio/wav' }) });
+  } catch (e) { console.warn('[stt]', e.message); res.status(502).json({ error: e.message, fallback: !voice.sttReady() }); }
 });
 app.get('/api/audio/:id', (req, res) => {
   const c = voice.clips.get(req.params.id);

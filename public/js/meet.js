@@ -254,12 +254,22 @@
       const el = $('#heard'); el.textContent = `${final ? 'You said' : 'Hearing'}: ${t}`; el.classList.add('show'); el.classList.toggle('final', !!final);
       clearTimeout(heardTimer); heardTimer = setTimeout(() => el.classList.remove('show'), final ? 3500 : 6000);
     };
-    const rec = recognizer({
+    const browserRec = () => recognizer({
       lang: $('#lang').value,
       onFinal: (t) => { if (echoOrInterrupt(t)) return; heard(t, true); say(t, 'voice'); },
       onInterim: (t) => { if (echoOrInterrupt(t)) return; heard(t, false); caption('self', t); },
       onState: (on, err) => { if (err) toast(err); },
     });
+    // ElevenLabs Scribe hears you (far better with Lebanese Arabic); the browser recognizer is the backup
+    const useCloud = local.getAudioTracks().length > 0 && await MR.cloudHearing(meetingId);
+    let rec = useCloud ? MR.cloudEar({
+      stream: local, meetingId, getLang: () => $('#lang').value,
+      canStart: () => talkingAgents.size === 0, // while an agent talks, the level watcher handles interruptions
+      onSpeech: () => heard('…', false),
+      onBusy: (b) => { if (b) heard('Understanding…', false); },
+      onFinal: (t) => { if (echoOrInterrupt(t)) return; heard(t, true); caption('self', t); say(t, 'voice'); },
+      onFail: () => { const was = rec?.active; rec?.off(); rec = browserRec(); if (was) rec?.on(); toast('Cloud hearing unavailable, using the browser instead.', 3500); },
+    }) : browserRec();
     const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     // On by default whenever you have a mic. (On some phones it can mute your mic for other PEOPLE in the call,
     // so you get a heads-up when someone joins.)
