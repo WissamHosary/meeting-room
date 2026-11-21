@@ -90,10 +90,17 @@
   socket.on('connect', () => socket.emit('office:join', { key: KEY }));
   // Speak out loud ONLY when answering something you just said here, or once when a task is finished.
   let lastSent = 0;
+  // After you talk over a question that's still being answered, that old answer is shown but not spoken.
+  let skipNextReply = false, awaitingReply = false;
   socket.on('office:msg', (m) => {
     const fresh = Date.now() - lastSent < 90000;
-    addMsg(m, { say: m.kind === 'done' || fresh });
-    if (m.who !== 'wissam' && fresh) { lastAgent = m.who; if (!voiceOn) vc?.replied(); }
+    const agentReply = m.who !== 'wissam';
+    if (agentReply && m.kind !== 'done') awaitingReply = false;
+    const muted = agentReply && skipNextReply && m.kind !== 'done';
+    if (muted) skipNextReply = false;
+    addMsg(m, { say: !muted && (m.kind === 'done' || fresh) });
+    if (agentReply) vc?.said(m.who, m.text);
+    if (agentReply && fresh && !muted) { lastAgent = m.who; if (!voiceOn) vc?.replied(); }
   });
   socket.on('office:audio', ({ msgId, index, total, audio }) => MR.voiceArrived(msgId, audio, index, total));
   socket.on('agent:typing', ({ agentId, on }) => {
@@ -106,7 +113,7 @@
   socket.on('tasks:changed', () => { if (!$('#view-tasks').classList.contains('hidden')) loadTasks(); });
   socket.on('team:changed', async () => { await loadTeam(); if (!$('#view-office').classList.contains('hidden')) renderOffice(); });
 
-  const send = (text) => { if (text.trim()) { lastSent = Date.now(); socket.emit('office:say', { text }); } };
+  const send = (text, interrupted) => { if (text.trim()) { lastSent = Date.now(); awaitingReply = true; socket.emit('office:say', { text, interrupted: interrupted || undefined }); } };
   $('#composer').addEventListener('submit', (e) => { e.preventDefault(); send($('#input').value); $('#input').value = ''; });
   $('#sendIcon').innerHTML = icons.send;
 
@@ -117,20 +124,31 @@
   // With no name said, you keep talking to whoever answered you last.
   const rec = null;
   let lastAgent = null;
+  let vcWasThinking = false;
   const vc = MR.voiceChat({
     getLang: () => $('#lang').value,
     onInterim: (t) => { $('#vHeard').textContent = t; },
-    onUtterance: (text) => {
+    onUtterance: (text, interrupted) => {
       const named = MR.ensureAddressed(text, TEAM) === text;
-      const who = byId(lastAgent);
-      send(named || !who ? text : `${who.name}, ${text}`);
+      // after an interruption, keep talking to the person you cut off
+      const who = byId(interrupted?.agent) || byId(lastAgent);
+      send(named || !who ? text : `${who.name}, ${text}`, interrupted && interrupted.agent ? interrupted : null);
+    },
+    onLevel: (v, s) => { // the orb breathes with your voice while listening
+      if (s !== 'listening') { $('#vOrb').style.transform = ''; return; }
+      $('#vOrb').style.transform = `scale(${1 + Math.min(0.35, v * 6)})`;
     },
     onState: (s, extra) => {
       $('#vOrb').className = `orb ${s}`;
       $('#micBtn').classList.toggle('on', s !== 'off' && s !== 'error');
-      if (s === 'listening') { $('#vState').textContent = lastAgent ? `Listening… (talking with ${byId(lastAgent).name})` : 'Listening…'; }
+      if (s === 'listening') {
+        if (extra === 'barge') { skipNextReply = vcWasThinking && awaitingReply; world?.speaking(lastAgent, false); }
+        $('#vState').textContent = lastAgent ? `Listening… (talking with ${byId(lastAgent).name})` : 'Listening…';
+        $('#vHeard').textContent = extra === 'barge' ? 'Go ahead, I stopped.' : 'Just talk. Say a name to switch who you’re talking to.';
+      }
+      vcWasThinking = s === 'thinking';
       if (s === 'thinking') { $('#vState').textContent = 'Thinking…'; $('#vHeard').textContent = `You: ${extra}`; }
-      if (s === 'speaking') { $('#vState').textContent = `${byId(extra)?.name || 'Agent'} is speaking…`; }
+      if (s === 'speaking') { $('#vState').textContent = `${byId(extra)?.name || 'Agent'} is speaking… talk anytime to interrupt`; }
       if (s === 'off') $('#voicePanel').classList.add('hidden');
       if (s === 'error') { $('#voicePanel').classList.add('hidden'); toast(extra, 4000); }
     },
@@ -144,7 +162,6 @@
     vc.start();
   });
   $('#vEnd').addEventListener('click', () => vc?.stop());
-  $('#vInterrupt').addEventListener('click', () => vc?.interrupt());
   $('#lang').addEventListener('change', () => vc?.restartLang());
 
   // ---------- living office ----------

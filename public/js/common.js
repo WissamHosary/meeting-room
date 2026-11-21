@@ -136,62 +136,102 @@
       listenOnce.stop = () => { try { rec.stop(); } catch {} };
     });
   }
-  // Hands-free voice conversation (like a voice chat with an assistant):
-  // listens continuously, sends what you said when you pause, goes quiet while the agent answers
-  // out loud (so it doesn't hear itself), then listens again by itself.
-  function voiceChat({ getLang, onUtterance, onState, onInterim }) {
+  // Hands-free voice conversation, like a voice assistant:
+  // - listens continuously and sends what you said when you pause;
+  // - while an agent thinks or speaks, an echo-cancelled mic keeps watching for YOUR voice;
+  //   as soon as you talk over them they stop instantly and listen (barge-in), and they're told
+  //   they were interrupted so the next answer is a natural follow-up.
+  function voiceChat({ getLang, onUtterance, onState, onInterim, onLevel }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
     let active = false, rec = null, state = 'off', buffer = '', sendTimer = null, waitTimer = null, running = false;
+    let speakingAgent = null, interrupted = null; // { agent, said } when you cut someone off
+    // ---- voice activity detection on an echo-cancelled mic (so the agent's own voice doesn't trigger it)
+    let micStream = null, actx = null, analyser = null, buf = null, vadTimer = null, floor = 0.01, echoFloor = 0.02, loudFrames = 0;
+    async function startVad() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+        actx = new AudioContext(); analyser = actx.createAnalyser(); analyser.fftSize = 1024;
+        actx.createMediaStreamSource(micStream).connect(analyser); buf = new Float32Array(analyser.fftSize);
+      } catch { micStream = null; }
+      vadTimer = setInterval(vadTick, 40);
+    }
+    function stopVad() { clearInterval(vadTimer); micStream?.getTracks().forEach((t) => t.stop()); actx?.close().catch(() => {}); micStream = actx = analyser = null; }
+    function level() {
+      if (!analyser) return 0;
+      analyser.getFloatTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+      return Math.sqrt(s / buf.length);
+    }
+    function vadTick() {
+      const v = level(); onLevel?.(v, state);
+      if (state === 'listening') { if (!buffer) floor = floor * 0.97 + Math.min(v, 0.05) * 0.03; loudFrames = 0; return; }
+      if (state !== 'speaking' && state !== 'thinking') { loudFrames = 0; return; }
+      // while the agent talks, learn how much of its voice still leaks through, and require you to be clearly louder
+      if (state === 'speaking' && loudFrames === 0) echoFloor = echoFloor * 0.95 + v * 0.05;
+      const threshold = state === 'speaking' ? Math.max(floor * 4, echoFloor * 2.6, 0.035) : Math.max(floor * 3.5, 0.025);
+      loudFrames = v > threshold ? loudFrames + 1 : Math.max(0, loudFrames - 1);
+      if (loudFrames >= (state === 'speaking' ? 8 : 6)) bargeIn(); // ~300ms of your voice
+    }
+    function bargeIn() {
+      loudFrames = 0;
+      if (state === 'speaking') interrupted = { agent: speakingAgent, said: lastSaid.get(speakingAgent) || '' };
+      cancelVoices(); // stop playback and drop any reply still on its way
+      buffer = ''; set('listening', 'barge'); startRec();
+    }
+    const lastSaid = new Map();
     const set = (s, extra) => { state = s; onState?.(s, extra); };
-    const start = () => {
+    function startRec() {
       if (!active || running) return;
       rec = new SR(); rec.lang = getLang(); rec.continuous = true; rec.interimResults = true;
       rec.onresult = (e) => {
         if (state !== 'listening') return;
         let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) buffer += ' ' + t; else interim += t;
-        }
+        for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) buffer += ' ' + t; else interim += t; }
         onInterim?.((buffer + ' ' + interim).trim());
         clearTimeout(sendTimer);
-        // you paused: send after a short silence so sentences aren't cut in half
-        if (buffer.trim() && !interim.trim()) sendTimer = setTimeout(flush, 900);
+        if (buffer.trim() && !interim.trim()) sendTimer = setTimeout(flush, 800); // you paused
       };
       rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { stop(); onState?.('error', 'Microphone permission denied'); } };
-      rec.onend = () => { running = false; if (active && state === 'listening') setTimeout(start, 200); };
+      rec.onend = () => { running = false; if (active && state === 'listening') setTimeout(startRec, 150); };
       try { rec.start(); running = true; } catch {}
-    };
-    const pauseListening = () => { try { rec?.abort(); } catch {} running = false; };
+    }
+    const stopRec = () => { try { rec?.abort(); } catch {} running = false; };
     function flush() {
       const text = buffer.trim(); buffer = '';
       if (!text || !active) return;
-      set('thinking', text); pauseListening();
-      onUtterance(text);
+      set('thinking', text); stopRec();
+      const info = interrupted; interrupted = null;
+      onUtterance(text, info);
       clearTimeout(waitTimer);
-      waitTimer = setTimeout(() => { if (state === 'thinking') resume(); }, 45000); // no answer: listen again
+      waitTimer = setTimeout(() => { if (state === 'thinking') resume(); }, 45000);
     }
     function resume() {
       if (!active) return;
       clearTimeout(waitTimer);
-      if (audioBusy() || pendingVoice.size || ('speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending))) return; // still talking
-      buffer = ''; set('listening'); start();
+      if (audioBusy() || pendingVoice.size || ('speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending))) return;
+      buffer = ''; set('listening'); startRec();
     }
     speakListeners.add((id, on) => {
       if (!active) return;
-      if (on) { set('speaking', id); pauseListening(); }
-      else setTimeout(resume, 450);
+      if (on) { speakingAgent = id; set('speaking', id); stopRec(); }
+      else if (state === 'speaking') setTimeout(resume, 350);
     });
-    function stop() { active = false; clearTimeout(sendTimer); clearTimeout(waitTimer); pauseListening(); set('off'); }
+    function stop() { active = false; clearTimeout(sendTimer); clearTimeout(waitTimer); stopRec(); stopVad(); set('off'); }
     return {
-      start() { if (active) return; active = true; buffer = ''; set('listening'); start(); },
+      async start() { if (active) return; active = true; buffer = ''; set('listening'); startRec(); await startVad(); },
       stop,
       get active() { return active; },
-      replied() { if (active && state === 'thinking') setTimeout(resume, 300); }, // answer arrived without voice
-      interrupt() { stopAudio(); setTimeout(resume, 200); },
-      restartLang() { if (active) { pauseListening(); if (state === 'listening') start(); } },
+      get state() { return state; },
+      replied() { if (active && state === 'thinking') setTimeout(resume, 300); },
+      said(agentId, text) { lastSaid.set(agentId, text); }, // remember what each agent said, for interruptions
+      restartLang() { if (active) { stopRec(); if (state === 'listening') startRec(); } },
     };
+  }
+  // Stop any agent voice right now and drop replies that haven't started playing yet.
+  function cancelVoices() {
+    for (const [, p] of pendingVoice) clearTimeout(p.timer);
+    pendingVoice.clear();
+    stopAudio();
   }
 
   // If nobody is named, address the manager so someone always answers a push-to-talk question.
@@ -244,5 +284,5 @@
     else p.timer = setTimeout(() => pendingVoice.delete(id), 30000);
   }
 
-  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, playClip, stopAudio, speakMessage, voiceArrived, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
+  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, cancelVoices, playClip, stopAudio, speakMessage, voiceArrived, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
 })();

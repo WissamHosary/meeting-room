@@ -204,8 +204,10 @@ io.on('connection', (socket) => {
     if (!isOwnerKey(key)) return socket.emit('error:auth');
     socket.data.owner = true; socket.join('office');
   });
-  socket.on('office:say', ({ text }) => {
+  socket.on('office:say', ({ text, interrupted }) => {
     if (!socket.data.owner || !text?.trim()) return;
+    // you talked over an agent: tell them, so they follow up naturally instead of repeating themselves
+    const cut = interrupted && typeof interrupted.agent === 'string' ? { agent: interrupted.agent, said: String(interrupted.said || '').slice(0, 400) } : null;
     const msg = { id: store.id('o'), who: 'wissam', name: 'Wissam', text: text.trim(), at: now() };
     store.db.office.push(msg); store.save(); io.to('office').emit('office:msg', msg);
     let targets = brain.addressed(text);
@@ -215,7 +217,7 @@ io.on('connection', (socket) => {
       enqueue('office', async () => {
         io.to('office').emit('agent:typing', { agentId, on: true });
         const history = store.db.office.slice(-14).map((m) => ({ name: m.name, text: m.text }));
-        const r = await brain.respond({ agentId, text, mode: 'office', history, isOwner: true });
+        const r = await brain.respond({ agentId, text, mode: 'office', history, isOwner: true, interrupted: cut && cut.agent === agentId ? cut.said : null });
         io.to('office').emit('agent:typing', { agentId, on: false });
         const out = { id: store.id('o'), who: agentId, name: team.find((a) => a.id === agentId).name, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
         store.db.office.push(out); store.save();

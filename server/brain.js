@@ -366,7 +366,7 @@ function offline(agent, text, { clientId, tools, speaker, isOwner, mode }) {
 }
 
 // ---------- main entry ----------
-async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true }) {
+async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true, interrupted = null }) {
   const agent = byId[agentId];
   const tools = await gatherTools(agent, text);
   // Claude; if it fails (no credit, bad key, outage) the built-in office brain answers.
@@ -379,7 +379,7 @@ async function respond({ agentId, text, mode = 'office', clientId = null, meetin
       const convo = history.slice(-14).map((h) => `${h.name}: ${h.text}`).join('\n');
       // With Claude, the FULL knowledge goes into a cached system block instead of a per-question selection.
       const useClaude = p === 'claude';
-      const user = `${contextBlock({ agent, clientId, mode, meeting, skipKnowledge: useClaude, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\nReply now as ${agent.name}, speaking directly.`;
+      const user = `${contextBlock({ agent, clientId, mode, meeting, skipKnowledge: useClaude, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\n${interrupted ? `(${speaker} just talked over you and cut you off while you were saying: "${interrupted}". That's fine, like a real conversation: don't repeat what you already said and don't apologise at length; respond to what ${speaker} just said.)\n\n` : ''}Reply now as ${agent.name}, speaking directly.`;
       const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user, useClaude ? { kb: knowledgeText(mode), provider: p, who: agentId } : { provider: p, who: agentId }), agent, isOwner);
       return { ...out, links: tools?.items?.length ? [tools.wiki && { title: `Wikipedia: ${tools.wiki.title}`, link: tools.wiki.url }, ...tools.items].filter(Boolean) : undefined, provider: p };
     } catch (e) {
