@@ -77,7 +77,7 @@ app.get('/api/settings', owner, (req, res) => res.json(settings.view()));
 app.post('/api/settings', owner, async (req, res) => {
   const b = req.body || {};
   settings.save({ AI_PROVIDER: b.provider, GEMINI_API_KEY: b.gemini, GROQ_API_KEY: b.groq, ANTHROPIC_API_KEY: b.claude, GEMINI_MODEL: b.geminiModel,
-    AGENT_LANGUAGE: b.language, CLAUDE_MODEL: b.claudeModel, ELEVENLABS_API_KEY: b.eleven, CF_TURN_KEY_ID: b.cfTurnId, CF_TURN_TOKEN: b.cfTurn, METERED_DOMAIN: b.meteredDomain, METERED_API_KEY: b.metered });
+    AGENT_LANGUAGE: b.language, CLAUDE_MODEL: b.claudeModel, ELEVENLABS_API_KEY: b.eleven, AZURE_SPEECH_KEY: b.azure, AZURE_SPEECH_REGION: b.azureRegion, CF_TURN_KEY_ID: b.cfTurnId, CF_TURN_TOKEN: b.cfTurn, METERED_DOMAIN: b.meteredDomain, METERED_API_KEY: b.metered });
   iceCache.at = 0;
   io.to('office').emit('team:changed');
   res.json({ ...settings.view(), test: await brain.testBrain() });

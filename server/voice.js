@@ -8,9 +8,10 @@ let lastProvider = null;
 const clips = new Map(); // id -> { buf, type, at }
 setInterval(() => { const now = Date.now(); for (const [k, v] of clips) if (now - v.at > 15 * 60e3) clips.delete(k); }, 60e3).unref();
 
+const hasAzure = () => !!(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION);
 const hasEleven = () => !!process.env.ELEVENLABS_API_KEY;
 const hasGemini = () => !!process.env.GEMINI_API_KEY;
-const enabled = () => (hasEleven() || hasGemini()) && process.env.SERVER_VOICE !== 'off';
+const enabled = () => (hasAzure() || hasEleven() || hasGemini()) && process.env.SERVER_VOICE !== 'off';
 
 // Strip things that sound wrong when read aloud: links, hidden action tags, markdown, emojis, list bullets.
 function cleanForSpeech(text) {
@@ -24,6 +25,40 @@ function cleanForSpeech(text) {
     .trim();
 }
 const keep = (buf, type) => { const id = crypto.randomBytes(12).toString('base64url'); clips.set(id, { buf, type, at: Date.now() }); return id; };
+
+// ---------------- Microsoft Azure (free tier: 500,000 characters a month) ----------------
+// Real Lebanese neural voices (Rami, Layla) first, then other Levantine voices so every agent sounds different.
+const AZ_MALE = ['ar-LB-RamiNeural', 'ar-SY-LaithNeural', 'ar-JO-TaimNeural'];
+const AZ_FEMALE = ['ar-LB-LaylaNeural', 'ar-SY-AmanyNeural', 'ar-JO-SanaNeural'];
+const AZ_PITCH = ['+0%', '-6%', '+6%', '-3%', '+3%']; // same voice twice? a slightly different pitch keeps them apart
+const azureVoiceFor = (() => {
+  const map = {}; let m = 0, f = 0;
+  const order = ['fadi', 'dana', ...team.map((a) => a.id).filter((id) => id !== 'fadi' && id !== 'dana')]; // Fadi & Dana get the Lebanese voices
+  for (const id of order) {
+    const a = team.find((x) => x.id === id); if (!a) continue;
+    const i = a.gender === 'f' ? f++ : m++;
+    const list = a.gender === 'f' ? AZ_FEMALE : AZ_MALE;
+    map[id] = { name: list[i % list.length], pitch: AZ_PITCH[Math.floor(i / list.length) % AZ_PITCH.length] };
+  }
+  return (id) => map[id] || { name: 'ar-LB-RamiNeural', pitch: '+0%' };
+})();
+const xml = (s) => s.replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+async function azure(text, agentId) {
+  const arabic = /[؀-ۿ]/.test(text);
+  const v = arabic ? azureVoiceFor(agentId) : { name: team.find((a) => a.id === agentId)?.gender === 'f' ? 'en-US-AvaMultilingualNeural' : 'en-US-AndrewMultilingualNeural', pitch: '+0%' };
+  const lang = v.name.slice(0, 5);
+  const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${lang}"><voice name="${v.name}"><prosody rate="+4%" pitch="${v.pitch}">${xml(text)}</prosody></voice></speak>`;
+  const r = await fetch(`https://${process.env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+    method: 'POST', signal: AbortSignal.timeout(15000),
+    headers: { 'Ocp-Apim-Subscription-Key': process.env.AZURE_SPEECH_KEY, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3', 'User-Agent': 'meeting-room' },
+    body: ssml,
+  });
+  if (!r.ok) {
+    const msg = r.status === 401 ? 'key or region is wrong' : r.status === 429 ? 'free monthly limit or rate limit reached' : (await r.text().catch(() => '')).slice(0, 160) || `HTTP ${r.status}`;
+    throw new Error(msg);
+  }
+  return keep(Buffer.from(await r.arrayBuffer()), 'audio/mpeg');
+}
 
 // ---------------- ElevenLabs ----------------
 // Each agent gets their own voice from your ElevenLabs account. Fadi gets your Lebanese voice; Lebanese/Arabic
@@ -133,6 +168,10 @@ async function synthesize(text, agentId) {
   const say = cleanForSpeech(text).slice(0, 1200);
   if (!say) return null;
   const errors = [];
+  if (hasAzure()) {
+    try { const id = await azure(say, agentId); lastProvider = 'azure'; lastError = null; return id; }
+    catch (e) { errors.push(`Azure: ${e.message}`); }
+  }
   if (hasEleven()) {
     try { const id = await eleven(say, agentId); lastProvider = 'elevenlabs'; lastError = null; return id; }
     catch (e) { errors.push(`ElevenLabs: ${e.message}`); }
@@ -162,7 +201,7 @@ function speakInChunks(text, agentId, onChunk) {
   list.forEach((piece, i) => synthesize(piece, agentId).then((id) => onChunk(i, list.length, id)).catch(() => onChunk(i, list.length, null)));
 }
 
-const status = () => ({ enabled: enabled(), provider: lastProvider, elevenlabs: hasEleven(), gemini: hasGemini(), voices: elevenVoices.count || null,
+const status = () => ({ enabled: enabled(), provider: lastProvider, azure: hasAzure(), elevenlabs: hasEleven(), gemini: hasGemini(), voices: elevenVoices.count || null,
   builtInOnly: libraryBlocked.key === process.env.ELEVENLABS_API_KEY && Date.now() - libraryBlocked.at < 3600e3, lastError });
 
 module.exports = { synthesize, speakInChunks, clips, enabled, status };

@@ -2,7 +2,7 @@
 // (data/db.json locally, the Key-Value store in the cloud). Host environment variables always win.
 const store = require('./store');
 
-const KEYS = ['AI_PROVIDER', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'TREND_TOPICS', 'CF_TURN_KEY_ID', 'CF_TURN_TOKEN', 'METERED_DOMAIN', 'METERED_API_KEY', 'AGENT_LANGUAGE', 'CLAUDE_MODEL', 'CREDIT_TOTAL', 'CREDIT_EXPIRES', 'ELEVENLABS_API_KEY', 'ELEVENLABS_MODEL'];
+const KEYS = ['AI_PROVIDER', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'GROQ_API_KEY', 'ANTHROPIC_API_KEY', 'TREND_TOPICS', 'CF_TURN_KEY_ID', 'CF_TURN_TOKEN', 'METERED_DOMAIN', 'METERED_API_KEY', 'AGENT_LANGUAGE', 'CLAUDE_MODEL', 'CREDIT_TOTAL', 'CREDIT_EXPIRES', 'ELEVENLABS_API_KEY', 'ELEVENLABS_MODEL', 'AZURE_SPEECH_KEY', 'AZURE_SPEECH_REGION'];
 const fromHost = new Set(KEYS.filter((k) => process.env[k]));
 
 function load() {
@@ -27,6 +27,7 @@ function view() {
     geminiModel: process.env.GEMINI_MODEL || '',
     claudeModel: process.env.CLAUDE_MODEL || 'claude-opus-5-5',
     eleven: mask(process.env.ELEVENLABS_API_KEY),
+    azure: mask(process.env.AZURE_SPEECH_KEY), azureRegion: process.env.AZURE_SPEECH_REGION || '',
     cfTurn: mask(process.env.CF_TURN_TOKEN), cfTurnId: process.env.CF_TURN_KEY_ID ? mask(process.env.CF_TURN_KEY_ID) : '',
     metered: mask(process.env.METERED_API_KEY), meteredDomain: process.env.METERED_DOMAIN || '',
     fromHost: [...fromHost],

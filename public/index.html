@@ -214,7 +214,12 @@
             <option value="claude-haiku-5-5">Claude Haiku 5.5 (fastest, cheapest)</option>
           </select></div>
         <h3 style="margin:10px 0 0">Voices</h3>
-        <p class="sub" style="margin:0">ElevenLabs gives the agents their voices (Fadi uses your Lebanese voice). Get your key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io → API Keys</a>. Gemini below is only a backup.</p>
+        <p class="sub" style="margin:0"><b>Microsoft Azure</b> is the main voice: real Lebanese voices, free up to 500,000 characters a month.</p>
+        <div class="row" style="align-items:end">
+          <div style="flex:2;min-width:220px"><label for="sAzure">Azure Speech key <span id="sAzureNow"></span></label><input id="sAzure" type="password" autocomplete="off" placeholder="KEY 1 from your Speech resource"></div>
+          <div style="flex:1;min-width:140px"><label for="sAzureRegion">Region <span id="sAzureRegionNow"></span></label><input id="sAzureRegion" autocomplete="off" placeholder="e.g. westeurope"></div>
+        </div>
+        <p class="sub" style="margin:0">ElevenLabs is a backup voice (Fadi uses your Lebanese voice on a paid plan). Get your key at <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io → API Keys</a>. Gemini below is only a backup.</p>
         <div><label for="sEleven">ElevenLabs API key <span id="sElevenNow"></span></label><input id="sEleven" type="password" autocomplete="off" placeholder="sk_..."></div>
         <div class="row"><button type="button" class="btn" id="sTestVoice">Test voice</button><span id="sVoiceResult" class="sub" style="margin:0" aria-live="polite"></span></div>
         <div><label for="sGemini">Gemini key, backup voice <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Free key from aistudio.google.com/apikey"></div>
