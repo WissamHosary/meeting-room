@@ -115,6 +115,64 @@
       listenOnce.stop = () => { try { rec.stop(); } catch {} };
     });
   }
+  // Hands-free voice conversation (like a voice chat with an assistant):
+  // listens continuously, sends what you said when you pause, goes quiet while the agent answers
+  // out loud (so it doesn't hear itself), then listens again by itself.
+  function voiceChat({ getLang, onUtterance, onState, onInterim }) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    let active = false, rec = null, state = 'off', buffer = '', sendTimer = null, waitTimer = null, running = false;
+    const set = (s, extra) => { state = s; onState?.(s, extra); };
+    const start = () => {
+      if (!active || running) return;
+      rec = new SR(); rec.lang = getLang(); rec.continuous = true; rec.interimResults = true;
+      rec.onresult = (e) => {
+        if (state !== 'listening') return;
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) buffer += ' ' + t; else interim += t;
+        }
+        onInterim?.((buffer + ' ' + interim).trim());
+        clearTimeout(sendTimer);
+        // you paused: send after a short silence so sentences aren't cut in half
+        if (buffer.trim() && !interim.trim()) sendTimer = setTimeout(flush, 900);
+      };
+      rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { stop(); onState?.('error', 'Microphone permission denied'); } };
+      rec.onend = () => { running = false; if (active && state === 'listening') setTimeout(start, 200); };
+      try { rec.start(); running = true; } catch {}
+    };
+    const pauseListening = () => { try { rec?.abort(); } catch {} running = false; };
+    function flush() {
+      const text = buffer.trim(); buffer = '';
+      if (!text || !active) return;
+      set('thinking', text); pauseListening();
+      onUtterance(text);
+      clearTimeout(waitTimer);
+      waitTimer = setTimeout(() => { if (state === 'thinking') resume(); }, 45000); // no answer: listen again
+    }
+    function resume() {
+      if (!active) return;
+      clearTimeout(waitTimer);
+      if ('speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending)) return; // still talking
+      buffer = ''; set('listening'); start();
+    }
+    speakListeners.add((id, on) => {
+      if (!active) return;
+      if (on) { set('speaking', id); pauseListening(); }
+      else setTimeout(resume, 450);
+    });
+    function stop() { active = false; clearTimeout(sendTimer); clearTimeout(waitTimer); pauseListening(); set('off'); }
+    return {
+      start() { if (active) return; active = true; buffer = ''; set('listening'); start(); },
+      stop,
+      get active() { return active; },
+      replied() { if (active && state === 'thinking') setTimeout(resume, 300); }, // answer arrived without voice
+      interrupt() { if ('speechSynthesis' in window) speechSynthesis.cancel(); setTimeout(resume, 200); },
+      restartLang() { if (active) { pauseListening(); if (state === 'listening') start(); } },
+    };
+  }
+
   // If nobody is named, address the manager so someone always answers a push-to-talk question.
   function ensureAddressed(text, team) {
     const low = text.toLowerCase();
@@ -138,5 +196,5 @@
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2A20 20 0 0 1 2.3 4.2 2 2 0 0 1 4.3 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8.1 9.7" transform="rotate(135 12 12)"/></svg>',
   };
 
-  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
+  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
 })();

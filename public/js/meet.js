@@ -127,8 +127,8 @@
     const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     let captionsOn = !!rec && !isPhone && local.getAudioTracks().length > 0;
     const ccBtn = document.createElement('button');
-    ccBtn.className = 'btn round'; ccBtn.textContent = 'CC'; ccBtn.style.fontWeight = '700';
-    const syncCC = () => { ccBtn.classList.toggle('on', captionsOn); ccBtn.setAttribute('aria-label', captionsOn ? 'Turn off live captions (agents hear you)' : 'Turn on live captions so agents hear you'); ccBtn.title = captionsOn ? 'Live captions on: agents hear what you say' : 'Live captions off: type to talk to agents'; };
+    ccBtn.className = 'btn'; ccBtn.textContent = 'Hands-free'; ccBtn.style.minHeight = '52px';
+    const syncCC = () => { ccBtn.classList.toggle('on', captionsOn); ccBtn.setAttribute('aria-label', captionsOn ? 'Hands-free on: agents hear you, say their name to ask them' : 'Turn on hands-free: agents hear you and answer when you say their name'); ccBtn.title = captionsOn ? 'Hands-free on: just talk, say an agent name to ask them' : 'Hands-free off'; };
     ccBtn.addEventListener('click', () => {
       if (!rec) return toast('Live captions need Chrome or Edge. You can type to the agents instead.');
       captionsOn = !captionsOn; syncCC();

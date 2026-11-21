@@ -89,7 +89,11 @@
   socket.on('connect', () => socket.emit('office:join', { key: KEY }));
   // Speak out loud ONLY when answering something you just said here, or once when a task is finished.
   let lastSent = 0;
-  socket.on('office:msg', (m) => addMsg(m, { say: m.kind === 'done' || Date.now() - lastSent < 90000 }));
+  socket.on('office:msg', (m) => {
+    const fresh = Date.now() - lastSent < 90000;
+    addMsg(m, { say: m.kind === 'done' || fresh });
+    if (m.who !== 'wissam' && fresh) { lastAgent = m.who; if (!voiceOn) vc?.replied(); }
+  });
   socket.on('agent:typing', ({ agentId, on }) => {
     if (on) world?.summon(agentId); // they walk to the boardroom to answer you
     world?.thinking(agentId, on);
@@ -107,20 +111,39 @@
   // voice in / voice out
   $('#micBtn').innerHTML = icons.mic; $('#voiceBtn').innerHTML = icons.speaker;
   $('#voiceBtn').addEventListener('click', () => { voiceOn = !voiceOn; $('#voiceBtn').classList.toggle('on', voiceOn); if (!voiceOn) speechSynthesis.cancel(); });
-  // Push-to-talk: tap the mic, say one thing, it's sent when you stop talking. Tap again to send early.
+  // Voice chat: tap the mic once and just talk, hands-free, until you press End.
+  // With no name said, you keep talking to whoever answered you last.
   const rec = null;
-  let listening = false;
-  $('#micBtn').addEventListener('click', async () => {
-    if (listening) { MR.listenOnce.stop?.(); return; }
-    listening = true; $('#micBtn').classList.add('on'); $('#input').placeholder = 'Listening… speak now';
-    speechSynthesis.cancel();
-    try {
-      const text = await MR.listenOnce({ lang: $('#lang').value, onInterim: (t) => { $('#input').value = t; } });
-      $('#input').value = '';
-      if (text) send(text); else toast("Didn't catch that. Tap the mic and try again.");
-    } catch (e) { toast(e.message, 4000); }
-    listening = false; $('#micBtn').classList.remove('on'); $('#input').placeholder = 'Talk to your team…';
+  let lastAgent = null;
+  const vc = MR.voiceChat({
+    getLang: () => $('#lang').value,
+    onInterim: (t) => { $('#vHeard').textContent = t; },
+    onUtterance: (text) => {
+      const named = MR.ensureAddressed(text, TEAM) === text;
+      const who = byId(lastAgent);
+      send(named || !who ? text : `${who.name}, ${text}`);
+    },
+    onState: (s, extra) => {
+      $('#vOrb').className = `orb ${s}`;
+      $('#micBtn').classList.toggle('on', s !== 'off' && s !== 'error');
+      if (s === 'listening') { $('#vState').textContent = lastAgent ? `Listening… (talking with ${byId(lastAgent).name})` : 'Listening…'; }
+      if (s === 'thinking') { $('#vState').textContent = 'Thinking…'; $('#vHeard').textContent = `You: ${extra}`; }
+      if (s === 'speaking') { $('#vState').textContent = `${byId(extra)?.name || 'Agent'} is speaking…`; }
+      if (s === 'off') $('#voicePanel').classList.add('hidden');
+      if (s === 'error') { $('#voicePanel').classList.add('hidden'); toast(extra, 4000); }
+    },
   });
+  $('#micBtn').setAttribute('aria-label', 'Start voice chat with your team');
+  $('#micBtn').addEventListener('click', () => {
+    if (!vc) return toast('Voice chat needs Chrome or Edge (or Safari on iPhone).', 4000);
+    if (vc.active) return vc.stop();
+    voiceOn = true; $('#voiceBtn').classList.add('on');
+    $('#voicePanel').classList.remove('hidden');
+    vc.start();
+  });
+  $('#vEnd').addEventListener('click', () => vc?.stop());
+  $('#vInterrupt').addEventListener('click', () => vc?.interrupt());
+  $('#lang').addEventListener('change', () => vc?.restartLang());
 
   // ---------- living office ----------
   function renderOffice() {

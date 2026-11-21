@@ -50,6 +50,12 @@
           </div>
         </div>
         <div class="world-loading" id="worldLoading">Bringing the team in…</div>
+        <div class="voice-panel hidden" id="voicePanel">
+          <div class="orb" id="vOrb" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="vtext" role="status" aria-live="polite"><b id="vState">Listening…</b><span id="vHeard">Just talk. Say a name to switch who you're talking to.</span></div>
+          <button type="button" class="btn" id="vInterrupt">Interrupt</button>
+          <button type="button" class="btn danger" id="vEnd">End</button>
+        </div>
       </div>
       <div class="room hidden" id="room">
         <svg class="skyline" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true"><path fill="#1c2531" d="M0 120V80h40V50h30v30h20V30h25v50h30V60h40v20h25V20h20v10h15v50h40V55h30v25h35V40h25v40h30V65h40v15h20V25h30v55h25V50h45v30h30V35h20v45h40V70h30v10h25V45h35v35h30V60h40v20h30V30h25v50h35V55h30v25h45V40h30v40h35v40z"/><g fill="#e3c48f" opacity=".5"><rect x="128" y="40" width="3" height="3"/><rect x="236" y="30" width="3" height="3"/><rect x="420" y="50" width="3" height="3"/><rect x="560" y="35" width="3" height="3"/><rect x="760" y="45" width="3" height="3"/><rect x="980" y="40" width="3" height="3"/><rect x="1090" y="60" width="3" height="3"/></g></svg>
@@ -59,7 +65,7 @@
       </div>
       <div class="chat" id="chat" aria-live="polite"></div>
       <div>
-        <div class="hint" id="hint">Try: "Fadi, assign Ziad to build the QR menu for Wing House" · "Dana, remember that I prefer dark designs" · "Liwaa, what's new in AI?"</div>
+        <div class="hint" id="hint">Tap the mic once for hands-free voice chat. Or type. Try: "Fadi, assign Ziad to build the QR menu for Wing House" · "Dana, remember that I prefer dark designs" · "Liwaa, what's new in AI?"</div>
         <form class="composer" id="composer">
           <button type="button" class="btn icon" id="micBtn" aria-label="Talk with your voice"></button>
           <select id="lang" aria-label="Speech language" style="width:auto"><option value="en-US">EN</option><option value="ar-LB">AR</option></select>

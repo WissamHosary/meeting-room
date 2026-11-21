@@ -81,6 +81,21 @@ main { overflow: auto; }
 .world-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); z-index: 1; }
 .tag span { display: none; }
 .tag:hover span, .tag.speaking span, .tag.thinking span { display: block; }
+.voice-panel { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 14px; width: min(720px, calc(100% - 32px)); padding: 12px 14px; border-radius: 18px; background: rgba(13,15,18,.86); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+.voice-panel .vtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.voice-panel .vtext b { font-size: 15px; }
+.voice-panel .vtext span { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orb { position: relative; width: 54px; height: 54px; flex: none; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3d6, var(--gold) 45%, #6b4f22 100%); box-shadow: 0 0 24px rgba(200,164,106,.55); transition: transform .3s; }
+.orb span { position: absolute; inset: -6px; border-radius: 50%; border: 2px solid rgba(200,164,106,.5); opacity: 0; }
+.orb.listening span { animation: ripple 1.8s infinite ease-out; }
+.orb.listening span:nth-child(2) { animation-delay: .6s; }
+.orb.listening span:nth-child(3) { animation-delay: 1.2s; }
+.orb.thinking { animation: spinPulse 1.2s infinite ease-in-out; background: radial-gradient(circle at 35% 30%, #e6f0ff, #6d8fd6 50%, #23324f 100%); box-shadow: 0 0 24px rgba(109,143,214,.6); }
+.orb.speaking { animation: talk .35s infinite alternate ease-in-out; }
+@keyframes ripple { 0% { transform: scale(.9); opacity: .8; } 100% { transform: scale(1.7); opacity: 0; } }
+@keyframes spinPulse { 50% { transform: scale(.88); } }
+@keyframes talk { from { transform: scale(.95); } to { transform: scale(1.12); } }
+@media (max-width: 600px) { .voice-panel { gap: 10px; padding: 10px; } .voice-panel #vInterrupt { display: none; } .orb { width: 44px; height: 44px; } }
 .tag { pointer-events: auto; display: flex; flex-direction: column; align-items: center; padding: 2px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: rgba(13,15,18,.72); backdrop-filter: blur(4px); color: var(--text); cursor: pointer; font-size: 11px; line-height: 1.25; white-space: nowrap; transition: background .2s, box-shadow .2s; }
 .tag b { font-size: 11px; font-weight: 600; }
 .tag span { color: var(--muted); font-size: 10px; }
