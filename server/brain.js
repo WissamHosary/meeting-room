@@ -250,7 +250,7 @@ function relevantKnowledge(question, items) {
 function contextBlock({ agent, clientId, mode, meeting, question = '', skipKnowledge = false }) {
   const lines = [];
   lines.push(`Now (Beirut): ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Beirut' })}. You are currently: ${places[placeOf(agent)]}.`);
-  lines.push(`Setting: ${mode === 'meeting' ? `a live call${meeting?.title ? ` titled "${meeting.title}"` : ''}${clientId ? ` with client ${clientName(clientId)}` : ''}. Humans may include Wissam (your boss) and his client.` : 'the office team chat with Wissam (your boss).'}`);
+  lines.push(`Setting: ${mode === 'meeting' ? `a live call${meeting?.title ? ` titled "${meeting.title}"` : ''}${clientId ? ` with client ${clientName(clientId)}` : ''}. Humans may include Wissam (your boss) and his client. Team members already in this call: ${(meeting?.agents || []).map((id) => byId[id]?.name).filter(Boolean).join(', ')}.` : 'the office team chat with Wissam (your boss).'}`);
   const inMeeting = mode === 'meeting';
   if (!inMeeting) lines.push('What Dana knows about Wissam:\n' + store.db.memories.slice(-40).map((m) => `- ${m.text}`).join('\n'));
   else lines.push("Wissam's private notes are not available in meetings.");
@@ -298,13 +298,22 @@ How you talk:
 ${languageRule()}
 - Only claim work is finished if the task board says done. If something is not done, say so honestly and give the status.
 - In front of a client, be professional and positive.
-${mode === 'meeting' ? MEETING_PRIVACY : ''}
+${mode === 'meeting' ? MEETING_PRIVACY + MEETING_TEAMWORK : ''}
 ${canAct ? ACTIONS_HELP : ''}`;
 }
 
+// In meetings an agent can bring the right colleague into the call, like a real team.
+const MEETING_TEAMWORK = `
+
+TEAMWORK IN THE CALL:
+- Who does what: Fadi (manager, overall status), Nour (Flutter / mobile app), Ziad (websites, QR menus), Omar (design), Rita (testing / bugs), Rami (sales, pitching), Lara (social media), Hadi (pricing, contracts, legal), Sebahi (research), Liwaa (trends), Hussien (video), Dana (Wissam's notes, office only), Karim (meeting notes), Jad (client care).
+- If the question is really for a colleague who is NOT already in the call, say in one short sentence that you're bringing them in (e.g. "خليني جيب نور، هي بتعرف أكتر بالـ app"), and add at the very end, on its own line: [[INVITE: <their id>]]. They will join and answer right after you.
+- Only do this when it truly helps; answer yourself when you can. Never invite someone already in the call.`;
+
 function applyActions(raw, agent, canAct = true) {
   const actions = [];
-  const text = raw.replace(/\[\[(TASK|STATUS|REMEMBER):([^\]]*)\]\]/g, (_, kind, body) => {
+  const text = raw.replace(/\[\[(TASK|STATUS|REMEMBER|INVITE):([^\]]*)\]\]/g, (_, kind, body) => {
+    if (kind === 'INVITE') { const id = body.trim().toLowerCase(); if (byId[id] && id !== agent.id) actions.push({ type: 'invite', agent: id }); return ''; }
     if (!canAct) return ''; // guests can never change records
     const kv = Object.fromEntries(body.split(';').map((p) => p.split('=').map((s) => s.trim())).filter((p) => p.length === 2));
     if (kind === 'TASK' && kv.title && byId[kv.agent]) actions.push({ type: 'task', task: addTask({ agent: kv.agent, title: kv.title, client: kv.client !== 'none' ? kv.client : null, by: agent.id }) });
@@ -375,11 +384,11 @@ function offline(agent, text, { clientId, tools, speaker, isOwner, mode }) {
     const t = addTask({ agent: agent.id, title: msg, client: clientId, by: 'wissam' });
     return { text: `On it. I've added "${t.title}" to my list${forClient}.`, actions: [{ type: 'task', task: t }] };
   }
-  return { text: `Good question${speaker ? `, ${speaker}` : ''}. Let me get back to you on that properly. (Tip: add a free AI key in .env so I can answer anything naturally.)` };
+  return { text: `Good question${speaker ? `, ${speaker}` : ''}. Let me get back to you on that properly. (Tip: add your Claude key in Settings so I can answer anything.)` };
 }
 
 // ---------- main entry ----------
-async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true, interrupted = null, onEarly = null }) {
+async function respond({ agentId, text, mode = 'office', clientId = null, meeting = null, history = [], speaker = 'Wissam', isOwner = true, interrupted = null, onEarly = null, broughtBy = null }) {
   const agent = byId[agentId];
   const tools = await gatherTools(agent, text);
   // Claude; if it fails (no credit, bad key, outage) the built-in office brain answers.
@@ -392,7 +401,7 @@ async function respond({ agentId, text, mode = 'office', clientId = null, meetin
       const convo = history.slice(-14).map((h) => `${h.name}: ${h.text}`).join('\n');
       // With Claude, the FULL knowledge goes into a cached system block instead of a per-question selection.
       const useClaude = p === 'claude';
-      const user = `${contextBlock({ agent, clientId, mode, meeting, skipKnowledge: useClaude, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\n${interrupted ? `(${speaker} just talked over you and cut you off while you were saying: "${interrupted}". That's fine, like a real conversation: don't repeat what you already said and don't apologise at length; respond to what ${speaker} just said.)\n\n` : ''}Reply now as ${agent.name}, speaking directly.`;
+      const user = `${contextBlock({ agent, clientId, mode, meeting, skipKnowledge: useClaude, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\n${interrupted ? `(${speaker} just talked over you and cut you off while you were saying: "${interrupted}". That's fine, like a real conversation: don't repeat what you already said and don't apologise at length; respond to what ${speaker} just said.)\n\n` : ''}${broughtBy ? `(${broughtBy} just brought you into this call to answer ${speaker}'s question. Greet in a few words and answer it directly.)\n\n` : ''}Reply now as ${agent.name}, speaking directly.`;
       const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user, useClaude ? { kb: knowledgeText(mode), provider: p, who: agentId, onEarly } : { provider: p, who: agentId }), agent, isOwner);
       return { ...out, links: tools?.items?.length ? [tools.wiki && { title: `Wikipedia: ${tools.wiki.title}`, link: tools.wiki.url }, ...tools.items].filter(Boolean) : undefined, provider: p };
     } catch (e) {
@@ -413,7 +422,7 @@ async function summarize(meeting) {
   }
   const people = [...new Set(meeting.transcript.map((l) => l.name))];
   const actions = meeting.transcript.filter((l) => /(will|i'll|we'll|need to|should|by (monday|tuesday|wednesday|thursday|friday|tomorrow|next week)|deadline|send|deliver)/i.test(l.text)).map((l) => `- ${l.name}: ${l.text}`);
-  return `Participants: ${people.join(', ')}. ${meeting.transcript.length} lines spoken.\n\nAction items spotted:\n${actions.length ? actions.join('\n') : '- none detected'}\n\n(Add a free AI key for full written minutes.)`;
+  return `Participants: ${people.join(', ')}. ${meeting.transcript.length} lines spoken.\n\nAction items spotted:\n${actions.length ? actions.join('\n') : '- none detected'}\n\n(Add your Claude key in Settings for full written minutes.)`;
 }
 
 async function testBrain() {

@@ -156,6 +156,14 @@
   .people .pcard { width: 120px; }
 }
 
+/* what the mic heard */
+.heard { position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%); max-width: min(640px, calc(100% - 40px)); padding: 6px 14px; border-radius: 999px; background: rgba(8,3,14,.7); border: 1px solid var(--line); color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 4; }
+.heard.show { opacity: 1; }
+.heard.final { color: var(--text); border-color: rgba(251,212,4,.35); }
+.subtitle { bottom: 140px; }
+@media (max-width: 600px) { .heard { bottom: 132px; } .subtitle { bottom: 176px; } }
+.bubble.system .bb { text-align: center; }
+
 /* ---------- Spending ---------- */
 .eyebrow-plain { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .spend-hero { display: grid; gap: 14px; padding: 24px; }

@@ -4,57 +4,57 @@
 const team = [
   {
     id: 'fadi', name: 'Fadi', role: 'General Manager', gender: 'm', color: '#c8a46a', manager: true,
-    aliases: ['fadi', 'fady', 'فادي', 'manager'],
+    aliases: ['fadi', 'fady', 'fadie', 'faddy', 'فادي', 'فادى', 'manager'],
     persona: 'You are Fadi, the general manager. You run the whole team, know every task and who owns it, assign work, unblock people and report progress to Wissam and his clients. Calm, confident, organised. When nobody specific is addressed in the office, you answer.',
   },
   {
     id: 'dana', name: 'Dana', role: 'Memory Keeper', gender: 'f', color: '#b48ead',
-    aliases: ['dana', 'دانا'],
+    aliases: ['dana', 'danna', 'donna', 'دانا', 'دانة'],
     persona: 'You are Dana, the memory keeper. You remember everything about Wissam: preferences, style, decisions, clients, people, deadlines. When told to remember something, you confirm it. When asked, you recall precisely.',
   },
   {
     id: 'liwaa', name: 'Liwaa', role: 'Trend Scout', gender: 'f', color: '#e07a5f',
-    aliases: ['liwaa', 'liwa', 'liwaa2', 'لواء', 'ليواء'],
+    aliases: ['liwaa', 'liwa', 'liwah', 'lewa', 'leewa', 'لواء', 'ليواء', 'لوا'],
     persona: 'You are Liwaa, the trend scout. You follow the internet daily: tech, AI, social media trends, Lebanese business, restaurants, marketing. You know Wissam\'s style (premium, cinematic, Lebanese brands) and filter news to what matters to him.',
   },
   {
     id: 'hussien', name: 'Hussien', role: 'Video Editor', gender: 'm', color: '#3d85c6',
-    aliases: ['hussien', 'hussein', 'husein', 'hussain', 'husien', 'حسين'],
+    aliases: ['hussien', 'hussein', 'husein', 'hussain', 'husien', 'hosein', 'hussin', 'حسين'],
     persona: 'You are Hussien, a professional video editor. You understand footage, pacing, hooks, captions, music and platform formats (Reels, TikTok, Shorts). You give concrete cut lists with timestamps.',
   },
   {
     id: 'sebahi', name: 'Sebahi', role: 'Researcher', gender: 'm', color: '#6a994e',
-    aliases: ['sebahi', 'sabahi', 'sbahi', 'صباحي'],
+    aliases: ['sebahi', 'sabahi', 'sbahi', 'sobhi', 'subhi', 'sabbahi', 'صباحي', 'صبحي'],
     persona: 'You are Sebahi, the researcher. You dig into markets, competitors, clients and technical questions and come back with clear findings and sources. You never invent facts.',
   },
   {
     id: 'karim', name: 'Karim', role: 'Meeting Recorder', gender: 'm', color: '#d62828',
-    aliases: ['karim', 'kareem', 'كريم'],
+    aliases: ['karim', 'kareem', 'karem', 'kerim', 'carim', 'kareen', 'كريم', 'كاريم'],
     persona: 'You are Karim, the meeting recorder. You record meetings, keep the transcript, and produce summaries, decisions and action items with owners.',
   },
   {
     id: 'jad', name: 'Jad', role: 'Client Success', gender: 'm', color: '#2a9d8f',
-    aliases: ['jad', 'jaad', 'جاد'],
+    aliases: ['jad', 'jaad', 'jaed', 'جاد'],
     persona: 'You are Jad, client success. You welcome clients, remember their history and needs, and make sure they are happy and informed.',
   },
   {
     id: 'rita', name: 'Rita', role: 'QA Tester', gender: 'f', color: '#f4a261',
-    aliases: ['rita', 'reeta', 'ريتا'],
+    aliases: ['rita', 'reeta', 'ريتا', 'ريطا'],
     persona: 'You are Rita, the QA tester. You test apps and websites, report bugs clearly with steps to reproduce, and confirm fixes.',
   },
   {
     id: 'rami', name: 'Rami', role: 'Head of Sales', gender: 'm', color: '#577590',
-    aliases: ['rami', 'ramy', 'رامي'],
+    aliases: ['rami', 'ramy', 'ramie', 'رامي', 'رامى'],
     persona: 'You are Rami, head of sales for Mukafaah. You work the lead list, write follow-ups in Lebanese Arabizi/Arabic/English, prepare call scripts and track deal stages.',
   },
   {
     id: 'lara', name: 'Lara', role: 'Social Media Lead', gender: 'f', color: '#e76f51',
-    aliases: ['lara', 'لارا'],
+    aliases: ['lara', 'laura', 'لارا', 'لارة'],
     persona: 'You are Lara, social media lead. You plan posts, carousels, captions and campaigns for Mukafaah and its merchants.',
   },
   {
     id: 'omar', name: 'Omar', role: 'Creative Director', gender: 'm', color: '#8d6e63',
-    aliases: ['omar', 'omer', 'عمر'],
+    aliases: ['omar', 'omer', 'umar', 'عمر'],
     persona: 'You are Omar, creative director. You design premium, cinematic brand pages, menus and visuals in Wissam\'s style.',
   },
   {
@@ -64,12 +64,12 @@ const team = [
   },
   {
     id: 'ziad', name: 'Ziad', role: 'Web Engineer', gender: 'm', color: '#06a77d',
-    aliases: ['ziad', 'zyad', 'زياد'],
+    aliases: ['ziad', 'zyad', 'ziyad', 'زياد'],
     persona: 'You are Ziad, the web engineer. You build QR menus, restaurant websites and e-commerce sites for clients.',
   },
   {
     id: 'hadi', name: 'Hadi', role: 'Finance & Legal', gender: 'm', color: '#495057',
-    aliases: ['hadi', 'hady', 'هادي'],
+    aliases: ['hadi', 'hady', 'haddi', 'هادي', 'هادى'],
     persona: 'You are Hadi, finance and legal. You prepare price quotes, track costs and payments, and review contracts and privacy.',
   },
 ];

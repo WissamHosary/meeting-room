@@ -202,6 +202,7 @@
 
     socket.on('meet:line', (l) => {
       addLine(l);
+      if (l.joined) toast(l.text, 3500);
       if (l.agent) {
         const a = byId(l.agent);
         lastLine.set(l.agent, l.text);
@@ -216,9 +217,22 @@
     $('#chatForm').addEventListener('submit', (e) => { e.preventDefault(); say($('#chatInput').value, 'chat'); $('#chatInput').value = ''; });
 
     // ---------- hands-free (agents hear you; they answer when named) ----------
-    const rec = recognizer({ lang: $('#lang').value, onFinal: (t) => say(t, 'voice'), onInterim: (t) => caption('self', t), onState: (on, err) => { if (err) toast(err); } });
+    // what the mic heard, shown live above the controls so you always know it understood you
+    let heardTimer;
+    const heard = (t, final) => {
+      const el = $('#heard'); el.textContent = `${final ? 'You said' : 'Hearing'}: ${t}`; el.classList.add('show'); el.classList.toggle('final', !!final);
+      clearTimeout(heardTimer); heardTimer = setTimeout(() => el.classList.remove('show'), final ? 3500 : 6000);
+    };
+    const rec = recognizer({
+      lang: $('#lang').value,
+      onFinal: (t) => { heard(t, true); say(t, 'voice'); },
+      onInterim: (t) => { heard(t, false); caption('self', t); },
+      onState: (on, err) => { if (err) toast(err); },
+    });
     const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    let handsFree = !!rec && !isPhone && local.getAudioTracks().length > 0;
+    // On by default whenever you have a mic. (On some phones it can mute your mic for other PEOPLE in the call,
+    // so you get a heads-up when someone joins.)
+    let handsFree = !!rec && local.getAudioTracks().length > 0;
     const syncHands = () => { $('#handsBtn').innerHTML = `${ic.wave}<span>${handsFree ? 'Hands-free on' : 'Hands-free'}</span>`; $('#handsBtn').classList.toggle('on', handsFree); $('#handsBtn').setAttribute('aria-pressed', handsFree); };
     $('#handsBtn').addEventListener('click', () => {
       if (!rec) return toast('Hands-free needs Chrome or Edge. You can type to the agents instead.');
@@ -353,7 +367,10 @@
         socket.emit('rtc:signal', { to: ex.id, data: { sdp: p.pc.localDescription, name } });
       }
     });
-    socket.on('meet:peer-joined', ({ name: n }) => toast(`${n} joined`));
+    socket.on('meet:peer-joined', ({ name: n }) => {
+      toast(`${n} joined`);
+      if (isPhone && handsFree) setTimeout(() => toast('On some phones Hands-free can mute you for others. If they can’t hear you, turn Hands-free off.', 6000), 2600);
+    });
     socket.on('meet:peer-left', ({ id }) => { const p = peers.get(id); if (p) toast(`${p.name} left`); dropPeer(id); });
     socket.on('rtc:signal', async ({ from, data }) => {
       let p = peers.get(from);

@@ -211,6 +211,41 @@ function earlyVoice(agentId, emit) {
   };
 }
 
+// ---------- meetings: agents joining and answering ----------
+function joinAgent(m, agentId, why) {
+  if (m.agents.includes(agentId) || !team.some((a) => a.id === agentId)) return false;
+  m.agents.push(agentId); store.save();
+  const room = `meet:${m.id}`;
+  io.to(room).emit('meet:agents', m.agents);
+  const a = team.find((x) => x.id === agentId);
+  const line = { id: store.id('l'), name: a.name, agent: agentId, silent: true, joined: true, text: `${a.name} (${a.role}) joined the meeting${why ? ` · ${why}` : ''}`, at: now() };
+  m.transcript.push(line); store.save(); io.to(room).emit('meet:line', line);
+  return true;
+}
+// One agent answers in a meeting. If the answer brings a colleague in ([[INVITE: id]]), that colleague joins
+// and answers the same question right after (at most two hand-offs, so it never loops).
+function agentAnswer(m, agentId, text, speaker, isOwner, depth, broughtBy = null) {
+  const room = `meet:${m.id}`;
+  enqueue(room, async () => {
+    io.to(room).emit('agent:typing', { agentId, on: true });
+    const history = m.transcript.slice(-16).map((l) => ({ name: l.name, text: l.text }));
+    const lineId = store.id('l');
+    const ev = earlyVoice(agentId, (index, total, audio) => io.to(room).emit('meet:audio', { lineId, index, total, audio }));
+    const r = await brain.respond({ agentId, text, mode: 'meeting', clientId: m.client, meeting: m, history: depth ? history : history.slice(0, -1), speaker, isOwner, onEarly: ev.onEarly, broughtBy });
+    io.to(room).emit('agent:typing', { agentId, on: false });
+    const a = team.find((x) => x.id === agentId);
+    const out = { id: lineId, name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
+    m.transcript.push(out); store.save(); io.to(room).emit('meet:line', out);
+    ev.finish(out.text);
+    if (r.actions?.some((x) => x.type === 'task' || x.type === 'status')) io.to('office').emit('tasks:changed');
+    if (depth < 2) for (const inv of (r.actions || []).filter((x) => x.type === 'invite')) {
+      if (inv.agent === agentId) continue;
+      joinAgent(m, inv.agent, `${a.name} brought them in`);
+      agentAnswer(m, inv.agent, text, speaker, isOwner, depth + 1, a.name);
+    }
+  });
+}
+
 // ---------- realtime ----------
 const queues = new Map(); // one speaker at a time per room
 const enqueue = (room, fn) => { const p = (queues.get(room) || Promise.resolve()).then(fn).catch((e) => console.error(e)); queues.set(room, p); return p; };
@@ -277,30 +312,19 @@ io.on('connection', (socket) => {
     const room = `meet:${m.id}`;
     const line = { name: socket.data.name, peer: socket.id, owner: socket.data.owner, text: text.trim().slice(0, 2000), via: via || 'chat', at: now() };
     m.transcript.push(line); store.save(); io.to(room).emit('meet:line', line);
-    // Agents stay silent unless their name is mentioned.
-    let targets = brain.addressed(text).filter((id) => m.agents.includes(id));
-    // guests get a fair limit on agent questions (protects your free AI quota from spam)
+    // Agents stay silent unless their name is mentioned. If you (the host) name someone who isn't in the
+    // call yet, they join automatically and answer.
+    const named = brain.addressed(text);
+    if (socket.data.owner) for (const id of named) if (!m.agents.includes(id)) joinAgent(m, id, `${socket.data.name} called them in`);
+    let targets = named.filter((id) => m.agents.includes(id));
+    // guests get a fair limit on agent questions (protects your AI credit from spam)
     if (targets.length && !socket.data.owner) {
       const now = Date.now();
       socket.data.asks = (socket.data.asks || []).filter((t) => now - t < 60000);
       if (socket.data.asks.length >= 6) { socket.emit('meet:error', 'Please give the team a moment before asking again.'); targets = []; }
       else socket.data.asks.push(now);
     }
-    for (const agentId of targets.slice(0, 3)) {
-      enqueue(room, async () => {
-        io.to(room).emit('agent:typing', { agentId, on: true });
-        const history = m.transcript.slice(-16).map((l) => ({ name: l.name, text: l.text }));
-        const lineId = store.id('l');
-        const ev = earlyVoice(agentId, (index, total, audio) => io.to(room).emit('meet:audio', { lineId, index, total, audio }));
-        const r = await brain.respond({ agentId, text, mode: 'meeting', clientId: m.client, meeting: m, history: history.slice(0, -1), speaker: socket.data.name, isOwner: socket.data.owner, onEarly: ev.onEarly });
-        io.to(room).emit('agent:typing', { agentId, on: false });
-        const a = team.find((x) => x.id === agentId);
-        const out = { id: lineId, name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
-        m.transcript.push(out); store.save(); io.to(room).emit('meet:line', out);
-        ev.finish(out.text);
-        if (r.actions?.length) io.to('office').emit('tasks:changed');
-      });
-    }
+    for (const agentId of targets.slice(0, 3)) agentAnswer(m, agentId, text, socket.data.name, socket.data.owner, 0);
   });
 
   socket.on('meet:agents', ({ agents }) => {
