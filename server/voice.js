@@ -14,6 +14,7 @@ const voiceFor = (() => {
 
 const MODELS = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'];
 let working = null;
+let lastError = null; // shown in Settings so you can see why a voice failed
 const clips = new Map(); // id -> { buf, type, at }
 setInterval(() => { const now = Date.now(); for (const [k, v] of clips) if (now - v.at > 15 * 60e3) clips.delete(k); }, 60e3).unref();
 
@@ -54,11 +55,11 @@ async function synthesize(text, agentId) {
       });
       const j = await r.json().catch(() => ({}));
       const part = j.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)?.inlineData;
-      if (!r.ok || !part) { console.warn(`[voice] ${model}: ${j.error?.message || 'no audio'}`.slice(0, 160)); continue; }
+      if (!r.ok || !part) { lastError = `${model}: ${j.error?.message || 'no audio returned'}`.slice(0, 300); console.warn(`[voice] ${lastError}`); continue; }
       let buf = Buffer.from(part.data, 'base64');
       const rate = Number((part.mimeType.match(/rate=(\d+)/) || [])[1] || 24000);
       if (!/wav/i.test(part.mimeType)) buf = pcmToWav(buf, rate);
-      working = model;
+      working = model; lastError = null;
       const id = crypto.randomBytes(12).toString('base64url');
       clips.set(id, { buf, type: 'audio/wav', at: Date.now() });
       return id;
@@ -83,4 +84,6 @@ function speakInChunks(text, agentId, onChunk) {
   list.forEach((piece, i) => synthesize(piece, agentId).then((id) => onChunk(i, list.length, id)).catch(() => onChunk(i, list.length, null)));
 }
 
-module.exports = { synthesize, speakInChunks, clips, enabled };
+const status = () => ({ enabled: enabled(), model: working, lastError });
+
+module.exports = { synthesize, speakInChunks, clips, enabled, status };

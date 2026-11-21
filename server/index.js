@@ -99,6 +99,12 @@ app.post('/api/usage/credit', owner, (req, res) => {
   res.json({ ok: true });
 });
 app.post('/api/usage/reset', owner, (req, res) => { delete store.db.usage; store.save(); res.json({ ok: true }); });
+// Voice self-test: makes one short clip and reports what happened.
+app.post('/api/voice/test', owner, async (req, res) => {
+  const t0 = Date.now();
+  const id = await voice.synthesize('أهلا وسام، هيدا اختبار للصوت.', 'fadi');
+  res.json({ ok: !!id, audio: id, ms: Date.now() - t0, ...voice.status() });
+});
 app.post('/api/settings/test', owner, async (req, res) => res.json(await brain.testBrain()));
 
 // ---------- company knowledge (what the agents know about Mukafaah and the business) ----------
