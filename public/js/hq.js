@@ -229,11 +229,17 @@
     $('#sResult').textContent = 'Saving and testing…';
     const body = { provider: $('#sProvider').value };
     for (const [k, id] of [['gemini', '#sGemini'], ['groq', '#sGroq'], ['claude', '#sClaude']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
-    const r = await api('/api/settings', { method: 'POST', body });
-    ['#sGemini', '#sGroq', '#sClaude'].forEach((id) => { $(id).value = ''; });
-    showTest(r.test); loadSettings(); loadTeam();
+    try {
+      const r = await api('/api/settings', { method: 'POST', body });
+      ['#sGemini', '#sGroq', '#sClaude'].forEach((id) => { $(id).value = ''; });
+      showTest(r.test);
+    } catch (err) { showTest({ ok: false, error: err.message }); }
+    loadSettings(); loadTeam();
   });
-  $('#sTest').addEventListener('click', async () => { $('#sResult').textContent = 'Testing…'; showTest(await api('/api/settings/test', { method: 'POST' })); });
+  $('#sTest').addEventListener('click', async () => {
+    $('#sResult').textContent = 'Testing…';
+    try { showTest(await api('/api/settings/test', { method: 'POST' })); } catch (err) { showTest({ ok: false, error: err.message }); }
+  });
   $('#sClearGemini').addEventListener('click', async () => { if (!confirm('Remove the saved Gemini key?')) return; await api('/api/settings', { method: 'POST', body: { gemini: '' } }); $('#sResult').textContent = 'Gemini key removed.'; loadSettings(); loadTeam(); });
 
   // ---------- start ----------
