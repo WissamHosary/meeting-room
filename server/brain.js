@@ -134,7 +134,8 @@ async function geminiCandidates() {
   const flash = names.filter((n) => /^gemini-\d+(\.\d+)?-flash$/.test(n)).sort(byVer);
   const lite = names.filter((n) => /^gemini-\d+(\.\d+)?-flash-lite$/.test(n)).sort(byVer);
   // two best flash models, then fast lite models (reliable, ~1s), then everything else
-  const models = [...new Set([...flash.slice(0, 2), ...lite.slice(0, 2), ...names.filter((n) => n === 'gemini-flash-lite-latest'), ...flash.slice(2), ...lite.slice(2), ...names.filter((n) => n === 'gemini-flash-latest')])];
+  // fast "lite" models first (about 1-2s, best for live conversation), then the bigger flash models
+  const models = [...new Set([...lite.slice(0, 2), ...names.filter((n) => n === 'gemini-flash-lite-latest'), ...flash.slice(0, 2), ...lite.slice(2), ...flash.slice(2), ...names.filter((n) => n === 'gemini-flash-latest')])];
   if (!models.length) models.push('gemini-flash-lite-latest', 'gemini-flash-latest');
   geminiList = { key, models, at: Date.now() };
   return models;
@@ -144,6 +145,7 @@ async function geminiCall(system, user) {
   const key = process.env.GEMINI_API_KEY;
   const all = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : await geminiCandidates();
   // try the model that worked recently first
+  if (!geminiWorking.model && store.db.settings?._geminiWorking) geminiWorking = { model: store.db.settings._geminiWorking, until: Date.now() + 6 * 3600e3 };
   const order = geminiWorking.model && Date.now() < geminiWorking.until ? [geminiWorking.model, ...all.filter((m) => m !== geminiWorking.model)] : all;
   let lastErr = 'no models available';
   const deadline = Date.now() + 35000; // never keep anyone waiting longer than this
@@ -159,8 +161,11 @@ async function geminiCall(system, user) {
       if (r.ok) {
         const text = j.candidates?.[0]?.content?.parts?.filter((x) => !x.thought).map((x) => x.text || '').join('') || '';
         if (!text.trim()) { lastErr = `${model} returned an empty answer`; continue; }
-        if (geminiWorking.model !== model) console.log(`[gemini] using ${model}`);
-        geminiWorking = { model, until: Date.now() + 60 * 60e3 };
+        if (geminiWorking.model !== model) {
+          console.log(`[gemini] using ${model}`);
+          (store.db.settings ||= {})._geminiWorking = model; store.save(); // remembered after the server sleeps
+        }
+        geminiWorking = { model, until: Date.now() + 6 * 3600e3 };
         return { text, model };
       }
       lastErr = `${model}: ${j.error?.message || r.statusText}`;
@@ -227,7 +232,36 @@ async function gatherTools(agent, text) {
   return null;
 }
 
-function contextBlock({ agent, clientId, mode, meeting }) {
+// Send only the knowledge that matters for this question (faster, cheaper answers).
+// Arabic/Arabizi words are mapped to the English topics the knowledge is written in.
+const TOPIC_HINTS = [
+  [/نقاط|نقط|نقطة|points?|no2at|nekat|reward|مكافأ|خصم|discount|tier|silver|gold/i, ['How points work', 'Loyalty types, tiers and Mukafaah Points']],
+  [/سعر|اسعار|أسعار|حق|كلفة|بكم|قديش|price|pricing|cost|fee|commission|trial|اشتراك/i, ['Pricing and offers']],
+  [/تطبيق|ابليكيشن|app|feature|ميزة|زبون|زباين|customer/i, ['Customer app features', 'Mukafaah Management app (for shops)']],
+  [/محل|محلات|مطعم|كاشير|cashier|shop|owner|merchant|management/i, ['Mukafaah Management app (for shops)', 'The problem Mukafaah solves']],
+  [/flutter|backend|server|سيرفر|tech|stack|database|supabase|render|api|code|كود/i, ['Tech stack and architecture', 'Mukafaah Manager web dashboard']],
+  [/قانون|legal|law|lawyer|محامي|privacy|خصوصية|data|داتا|security|أمان/i, ['Legal and compliance notes', 'Security and data practices']],
+  [/sales|بيع|مبيعات|call|اتصال|تلفون|pitch|lead|عميل|clients?/i, ['Target market and sales approach', 'Sales pitch and call script']],
+  [/brand|logo|لوغو|لون|ألوان|colou?r|kafo|كافو|design|تصميم/i, ['Brand identity and Kafo the bear']],
+  [/marketing|تسويق|post|بوست|instagram|انستغرام|tiktok|carousel|content|محتوى/i, ['Marketing content produced', 'Brand identity and Kafo the bear']],
+  [/roadmap|launch|إطلاق|status|وين صرنا|next|بعدين|plan|خطة/i, ['Product status and roadmap', 'Open positioning questions']],
+  [/website|موقع|qr|menu|منيو|odoo|whatsapp|واتساب|services?|خدمات/i, ['Services beyond Mukafaah', 'Portfolio of brand sites']],
+];
+function relevantKnowledge(question, items) {
+  if (!items.length) return [];
+  const q = (question || '').toLowerCase();
+  const pick = new Set(['What Mukafaah is', "Wissam's working style and preferences"]);
+  for (const [re, titles] of TOPIC_HINTS) if (re.test(q)) titles.forEach((t) => pick.add(t));
+  const words = new Set(q.split(/[^a-z0-9؀-ۿ]+/).filter((w) => w.length > 3));
+  const scored = items.map((k) => ({ k, s: (k.title + ' ' + k.text).toLowerCase().split(/[^a-z0-9؀-ۿ]+/).filter((w) => words.has(w)).length }))
+    .filter((x) => x.s >= 2).sort((a, b) => b.s - a.s).slice(0, 3);
+  scored.forEach((x) => pick.add(x.k.title));
+  const chosen = items.filter((k) => pick.has(k.title)).slice(0, 6);
+  // custom items you add yourself are short and always included
+  return [...new Set([...chosen, ...items.filter((k) => !TOPIC_HINTS.some(([, t]) => t.includes(k.title)) && !['What Mukafaah is', "Wissam's working style and preferences", 'The problem Mukafaah solves', 'Other projects (examples)'].includes(k.title) && k.text.length < 600)])];
+}
+
+function contextBlock({ agent, clientId, mode, meeting, question = '' }) {
   const lines = [];
   lines.push(`Now (Beirut): ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Beirut' })}. You are currently: ${places[placeOf(agent)]}.`);
   lines.push(`Setting: ${mode === 'meeting' ? `a live call${meeting?.title ? ` titled "${meeting.title}"` : ''}${clientId ? ` with client ${clientName(clientId)}` : ''}. Humans may include Wissam (your boss) and his client.` : 'the office team chat with Wissam (your boss).'}`);
@@ -239,7 +273,7 @@ function contextBlock({ agent, clientId, mode, meeting }) {
     : agent.manager || agent.id === 'jad' || agent.id === 'karim' ? tasksFor({ clientId }) : tasksFor({ agentId: agent.id, clientId });
   lines.push('Task board (the ONLY source of truth for work status):\n' + (relevant.length ? relevant.map((t) => `- [${t.id}] ${byId[t.agent]?.name}: "${t.title}" for ${clientName(t.client)} — ${statusWord[t.status]}`).join('\n') : '- (no tasks)'));
   // company knowledge (Mukafaah, services, Wissam's style). In meetings only entries marked public.
-  const kb = (store.db.knowledge || []).filter((k) => !inMeeting || k.audience === 'public');
+  const kb = relevantKnowledge(question, (store.db.knowledge || []).filter((k) => !inMeeting || k.audience === 'public'));
   if (kb.length) lines.push('Company knowledge (use it, but never read it out like a document):\n' + kb.map((k) => `## ${k.title}\n${k.text}`).join('\n\n'));
   if (!inMeeting && store.db.clients.length) lines.push('Clients: ' + store.db.clients.map((c) => `${c.name}${c.notes ? ` (${c.notes})` : ''}`).join('; '));
   return lines.join('\n\n');
@@ -273,7 +307,7 @@ function systemPrompt(agent, { mode = 'office', canAct = true } = {}) {
 You work at Wissam's company (he is the founder of Mukafaah and builds apps and websites for clients in Lebanon). Your colleagues: ${roster}.
 
 How you talk:
-- Like a real person on a call: natural, warm, short (1-4 sentences unless asked for detail). No bullet lists unless asked. No emojis. Never say you are an AI model unless directly asked.
+- Like a real person on a call: natural, warm, SHORT (1-3 sentences, because it is spoken out loud) unless asked for detail. No bullet lists unless asked. No emojis. Never say you are an AI model unless directly asked.
 ${languageRule()}
 - Only claim work is finished if the task board says done. If something is not done, say so honestly and give the status.
 - In front of a client, be professional and positive.
@@ -367,7 +401,7 @@ async function respond({ agentId, text, mode = 'office', clientId = null, meetin
       const toolText = tools?.kind === 'news' ? `\n\nLive news you just pulled on "${tools.topic}":\n` + tools.items.map((i) => `- ${i.title} (${i.source}, ${i.date})`).join('\n')
         : tools?.kind === 'research' ? `\n\nResearch you just pulled on "${tools.topic}":\n${tools.wiki ? `Wikipedia: ${tools.wiki.extract}\n` : ''}` + tools.items.map((i) => `- ${i.title} (${i.source})`).join('\n') : '';
       const convo = history.slice(-14).map((h) => `${h.name}: ${h.text}`).join('\n');
-      const user = `${contextBlock({ agent, clientId, mode, meeting })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\nReply now as ${agent.name}, speaking directly.`;
+      const user = `${contextBlock({ agent, clientId, mode, meeting, question: `${history.slice(-2).map((h) => h.text).join(' ')} ${text}` })}${toolText}\n\nConversation so far:\n${convo}\n${speaker}: ${text}\n\nReply now as ${agent.name}, speaking directly.`;
       const out = applyActions(await callLLM(systemPrompt(agent, { mode, canAct: isOwner }), user), agent, isOwner);
       return { ...out, links: tools?.items?.length ? [tools.wiki && { title: `Wikipedia: ${tools.wiki.title}`, link: tools.wiki.url }, ...tools.items].filter(Boolean) : undefined, provider: p };
     } catch (e) {

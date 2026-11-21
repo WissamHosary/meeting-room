@@ -69,7 +69,24 @@
       speechSynthesis.speak(u);
     });
   }
-  const isSpeaking = () => 'speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending);
+  // Server-generated voices (work in every browser): played one after another.
+  const audioQueue = []; let playing = null;
+  function playClip(url, agent) {
+    return new Promise((resolve) => { audioQueue.push({ url, agent, resolve }); pump(); });
+  }
+  function pump() {
+    if (playing || !audioQueue.length) return;
+    const it = audioQueue.shift();
+    const a = new Audio(it.url); playing = a;
+    let finished = false;
+    const done = () => { if (finished) return; finished = true; if (playing === a) playing = null; speakListeners.forEach((f) => f(it.agent.id, false)); it.resolve(); pump(); };
+    a.onplay = () => speakListeners.forEach((f) => f(it.agent.id, true));
+    a.onended = done; a.onerror = done; a._done = done;
+    a.play().catch(() => { done(); toast('Tap anywhere on the page once to turn on the team’s sound.', 4000); });
+  }
+  const audioBusy = () => !!playing || audioQueue.length > 0;
+  function stopAudio() { audioQueue.length = 0; if (playing) { const p = playing; p.pause(); p._done?.(); } if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+  const isSpeaking = () => audioBusy() || 'speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending);
 
   // ---------- speech recognition (free in Chrome / Edge) ----------
   function recognizer({ lang = 'en-US', onFinal, onInterim, onState }) {
@@ -156,7 +173,7 @@
     function resume() {
       if (!active) return;
       clearTimeout(waitTimer);
-      if ('speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending)) return; // still talking
+      if (audioBusy() || pendingVoice.size || ('speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending))) return; // still talking
       buffer = ''; set('listening'); start();
     }
     speakListeners.add((id, on) => {
@@ -170,7 +187,7 @@
       stop,
       get active() { return active; },
       replied() { if (active && state === 'thinking') setTimeout(resume, 300); }, // answer arrived without voice
-      interrupt() { if ('speechSynthesis' in window) speechSynthesis.cancel(); setTimeout(resume, 200); },
+      interrupt() { stopAudio(); setTimeout(resume, 200); },
       restartLang() { if (active) { pauseListening(); if (state === 'listening') start(); } },
     };
   }
@@ -198,5 +215,32 @@
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2A20 20 0 0 1 2.3 4.2 2 2 0 0 1 4.3 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8.1 9.7" transform="rotate(135 12 12)"/></svg>',
   };
 
-  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
+  // Speak an agent message: wait for the server voice (if it's coming), else use the browser voice.
+  const pendingVoice = new Map();
+  function speakMessage(id, text, agent, { tts, enabled = true } = {}) {
+    if (!enabled) return;
+    // A natural voice in this browser for this language (e.g. Microsoft Edge's Lebanese voices) speaks instantly.
+    const arabic = /[؀-ۿ]/.test(text);
+    const local = voices.length ? pickVoice(agent.gender, arabic, 0) : null;
+    const goodLocal = local && (!arabic || /^ar/i.test(local.lang)) && /natural|online|neural/i.test(local.name);
+    if (!tts || goodLocal) return speak(text, agent);
+    const timer = setTimeout(() => { pendingVoice.delete(id); speak(text, agent); }, 25000);
+    pendingVoice.set(id, { text, agent, timer });
+  }
+  // Voice comes in pieces (first sentence first); play them strictly in order as they arrive.
+  function voiceArrived(id, audio, index = 0, total = 1) {
+    const p = pendingVoice.get(id); if (!p) return;
+    clearTimeout(p.timer);
+    p.got ||= {}; p.got[index] = audio || 'fail'; p.next ||= 0;
+    while (p.got[p.next] !== undefined) {
+      const a = p.got[p.next];
+      if (a === 'fail') { if (p.next === 0 && total === 1) speak(p.text, p.agent); } // nothing usable: browser voice
+      else playClip(`/api/audio/${a}`, p.agent);
+      p.next++;
+    }
+    if (p.next >= total) pendingVoice.delete(id);
+    else p.timer = setTimeout(() => pendingVoice.delete(id), 30000);
+  }
+
+  window.MR = { KEY, api, esc, avatar, loadPortraits, listenOnce, ensureAddressed, voiceChat, playClip, stopAudio, speakMessage, voiceArrived, speak, isSpeaking, onSpeak: (f) => speakListeners.add(f), recognizer, toast, icons };
 })();

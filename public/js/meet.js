@@ -107,10 +107,11 @@
       if (l.agent) {
         const a = byId(l.agent);
         caption(document.getElementById(`agent-${l.agent}`), l.text);
-        if (l.answer && !l.silent) speak(l.text, a, { enabled: voiceOn });
+        if (l.answer && !l.silent) MR.speakMessage(l.id, l.text, a, { tts: l.tts, enabled: voiceOn });
         if (recorder) recNote(`${l.name}: ${l.text}`);
       } else if (l.peer && l.peer !== socket.id) caption(document.getElementById(`tile-${l.peer}`), l.text);
     });
+    socket.on('meet:audio', ({ lineId, index, total, audio }) => MR.voiceArrived(lineId, audio, index, total));
     socket.on('agent:typing', ({ agentId, on }) => {
       const t = document.getElementById(`agent-${agentId}`); if (!t) return;
       t.querySelector('.label small').textContent = on ? 'thinking…' : byId(agentId).role;
@@ -175,7 +176,7 @@
       document.querySelector('#tile-self video').style.display = tr.enabled ? '' : 'none';
     });
     if (!local.getVideoTracks().length) { $('#camBtn').classList.replace('on', 'off'); }
-    $('#voiceBtn').addEventListener('click', () => { voiceOn = !voiceOn; $('#voiceBtn').classList.toggle('on', voiceOn); if (!voiceOn) speechSynthesis.cancel(); });
+    $('#voiceBtn').addEventListener('click', () => { voiceOn = !voiceOn; $('#voiceBtn').classList.toggle('on', voiceOn); if (!voiceOn) MR.stopAudio(); });
     $('#leaveBtn').addEventListener('click', () => { if (recorder) stopRecording(); socket.disconnect(); local.getTracks().forEach((t) => t.stop()); location.href = isOwner ? '/' : 'about:blank'; });
     $('#inviteBtn').addEventListener('click', () => { navigator.clipboard.writeText(location.origin + location.pathname); toast('Invite link copied'); });
     $('#endBtn').addEventListener('click', () => { if (confirm('End the meeting and have Karim write the notes?')) { if (recorder) stopRecording(); socket.emit('meet:end'); } });

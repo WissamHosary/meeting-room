@@ -82,7 +82,7 @@
     el.className = `msg ${mine ? 'me' : ''}`;
     el.innerHTML = `${avatar(a)}<div class="body" dir="auto"><div class="who"><b>${esc(a.name)}</b>${a.role ? ` · ${esc(a.role)}` : ''}</div>${esc(m.text)}${links ? `<div class="links">${links}</div>` : ''}</div>`;
     $('#chat').appendChild(el); $('#chat').scrollTop = 1e9;
-    if (say && !mine && a.id) speak(m.text, a, { enabled: voiceOn });
+    if (say && !mine && a.id) MR.speakMessage(m.id, m.text, a, { tts: m.tts, enabled: voiceOn });
   }
   MR.onSpeak((id, on) => { seat(id)?.classList.toggle('speaking', on); world?.speaking(id, on); if (on) rec?.pause(true); else setTimeout(() => rec?.pause(false), 400); });
 
@@ -95,6 +95,7 @@
     addMsg(m, { say: m.kind === 'done' || fresh });
     if (m.who !== 'wissam' && fresh) { lastAgent = m.who; if (!voiceOn) vc?.replied(); }
   });
+  socket.on('office:audio', ({ msgId, index, total, audio }) => MR.voiceArrived(msgId, audio, index, total));
   socket.on('agent:typing', ({ agentId, on }) => {
     if (on) world?.summon(agentId); // they walk to the boardroom to answer you
     world?.thinking(agentId, on);
@@ -111,7 +112,7 @@
 
   // voice in / voice out
   $('#micBtn').innerHTML = icons.mic; $('#voiceBtn').innerHTML = icons.speaker;
-  $('#voiceBtn').addEventListener('click', () => { voiceOn = !voiceOn; $('#voiceBtn').classList.toggle('on', voiceOn); if (!voiceOn) speechSynthesis.cancel(); });
+  $('#voiceBtn').addEventListener('click', () => { voiceOn = !voiceOn; $('#voiceBtn').classList.toggle('on', voiceOn); if (!voiceOn) MR.stopAudio(); });
   // Voice chat: tap the mic once and just talk, hands-free, until you press End.
   // With no name said, you keep talking to whoever answered you last.
   const rec = null;

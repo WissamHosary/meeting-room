@@ -11,6 +11,7 @@ const store = require('./store');
 const settings = require('./settings');
 const { team, places } = require('./team');
 const brain = require('./brain');
+const voice = require('./voice');
 
 const PORT = Number(process.env.PORT || 3000);
 const app = express();
@@ -64,6 +65,11 @@ app.get('/api/ice', async (req, res) => {
   if (!isOwnerKey(req.get('x-owner-key')) && !openMeeting(String(req.query.m || ''))) return res.status(403).json({ error: 'meeting link required' });
   const relays = await relayServers();
   res.json({ iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }, ...relays], relay: relays.length > 0 });
+});
+app.get('/api/audio/:id', (req, res) => {
+  const c = voice.clips.get(req.params.id);
+  if (!c) return res.status(404).end();
+  res.set('content-type', c.type).set('cache-control', 'private, max-age=900').send(c.buf);
 });
 app.get('/api/whoami', (req, res) => res.json({ owner: isOwnerKey(req.get('x-owner-key')) }));
 
@@ -121,8 +127,9 @@ app.patch('/api/tasks/:id', owner, (req, res) => {
   if (!wasDone && t.status === 'done') { // the agent tells you once, when they finish
     const a = team.find((x) => x.id === t.agent);
     const c = store.db.clients.find((x) => x.id === t.client);
-    const msg = { id: store.id('o'), who: a.id, name: a.name, kind: 'done', text: `Wissam, I just finished "${t.title}"${c ? ` for ${c.name}` : ''}.`, at: now() };
+    const msg = { id: store.id('o'), who: a.id, name: a.name, kind: 'done', tts: voice.enabled(), text: `Wissam, I just finished "${t.title}"${c ? ` for ${c.name}` : ''}.`, at: now() };
     store.db.office.push(msg); store.save(); io.to('office').emit('office:msg', msg);
+    if (msg.tts) voice.speakInChunks(msg.text, a.id, (index, total, audio) => io.to('office').emit('office:audio', { msgId: msg.id, index, total, audio }));
   }
 });
 app.delete('/api/tasks/:id', owner, (req, res) => { store.db.tasks = store.db.tasks.filter((t) => t.id !== req.params.id); store.save(); io.to('office').emit('tasks:changed'); res.json({ ok: true }); });
@@ -193,9 +200,10 @@ io.on('connection', (socket) => {
         const history = store.db.office.slice(-14).map((m) => ({ name: m.name, text: m.text }));
         const r = await brain.respond({ agentId, text, mode: 'office', history, isOwner: true });
         io.to('office').emit('agent:typing', { agentId, on: false });
-        const out = { id: store.id('o'), who: agentId, name: team.find((a) => a.id === agentId).name, text: r.text, links: r.links, at: now() };
+        const out = { id: store.id('o'), who: agentId, name: team.find((a) => a.id === agentId).name, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
         store.db.office.push(out); store.save();
         io.to('office').emit('office:msg', out);
+        if (out.tts) voice.speakInChunks(out.text, agentId, (index, total, audio) => io.to('office').emit('office:audio', { msgId: out.id, index, total, audio }));
         if (r.actions?.length) io.to('office').emit('tasks:changed');
       });
     }
@@ -244,8 +252,9 @@ io.on('connection', (socket) => {
         const r = await brain.respond({ agentId, text, mode: 'meeting', clientId: m.client, meeting: m, history: history.slice(0, -1), speaker: socket.data.name, isOwner: socket.data.owner });
         io.to(room).emit('agent:typing', { agentId, on: false });
         const a = team.find((x) => x.id === agentId);
-        const out = { name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, at: now() };
+        const out = { id: store.id('l'), name: a.name, agent: agentId, answer: true, text: r.text, links: r.links, tts: voice.enabled(), at: now() };
         m.transcript.push(out); store.save(); io.to(room).emit('meet:line', out);
+        if (out.tts) voice.speakInChunks(out.text, agentId, (index, total, audio) => io.to(room).emit('meet:audio', { lineId: out.id, index, total, audio }));
         if (r.actions?.length) io.to('office').emit('tasks:changed');
       });
     }
