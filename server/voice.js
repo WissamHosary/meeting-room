@@ -29,13 +29,17 @@ const keep = (buf, type) => { const id = crypto.randomBytes(12).toString('base64
 // Each agent gets their own voice from your ElevenLabs account. Fadi gets your Lebanese voice; Lebanese/Arabic
 // voices are preferred for everyone else, then other voices by gender.
 let elevenVoices = { key: null, at: 0, map: {} };
+// Free ElevenLabs plans can't use voices from the Voice Library through the API (only the built-in "premade"
+// voices). Once we see that refusal, we only pick built-in voices until the plan is upgraded (re-checked hourly).
+let libraryBlocked = { key: null, at: 0 };
 async function elevenVoiceFor(agentId) {
   const key = process.env.ELEVENLABS_API_KEY;
-  if (elevenVoices.key !== key || Date.now() - elevenVoices.at > 3600e3) {
+  const blocked = libraryBlocked.key === key && Date.now() - libraryBlocked.at < 3600e3;
+  if (elevenVoices.key !== key || elevenVoices.blocked !== blocked || Date.now() - elevenVoices.at > 3600e3) {
     const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key }, signal: AbortSignal.timeout(10000) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail?.message || j.detail?.status || `voices ${r.status}`);
-    const voices = j.voices || [];
+    const voices = (j.voices || []).filter((v) => !blocked || v.category === 'premade');
     const text = (v) => `${v.name} ${Object.values(v.labels || {}).join(' ')} ${v.description || ''}`.toLowerCase();
     const isLeb = (v) => /leban|beirut|levant|لبنان/.test(text(v));
     const isArab = (v) => /arab|عرب/.test(text(v));
@@ -55,11 +59,22 @@ async function elevenVoiceFor(agentId) {
       const pick = (usable.length ? usable : list)[(a.gender === 'f' ? fi++ : mi++) % Math.max(1, (usable.length ? usable : list).length)];
       if (pick) map[a.id] = pick.voice_id;
     }
-    elevenVoices = { key, at: Date.now(), map, count: voices.length };
+    elevenVoices = { key, at: Date.now(), map, count: voices.length, blocked };
   }
   return elevenVoices.map[agentId] || Object.values(elevenVoices.map)[0];
 }
-async function eleven(text, agentId) {
+async function eleven(text, agentId, retried = false) {
+  try { return await elevenOnce(text, agentId); }
+  catch (e) {
+    // free plan + a Voice Library voice: switch to built-in voices and try again once
+    if (!retried && /library voices|upgrade your subscription/i.test(e.message)) {
+      libraryBlocked = { key: process.env.ELEVENLABS_API_KEY, at: Date.now() };
+      return eleven(text, agentId, true);
+    }
+    throw e;
+  }
+}
+async function elevenOnce(text, agentId) {
   const voiceId = await elevenVoiceFor(agentId);
   if (!voiceId) throw new Error('no voices found in your ElevenLabs account');
   const model = process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5'; // fastest; speaks Arabic; half the credits
@@ -147,6 +162,7 @@ function speakInChunks(text, agentId, onChunk) {
   list.forEach((piece, i) => synthesize(piece, agentId).then((id) => onChunk(i, list.length, id)).catch(() => onChunk(i, list.length, null)));
 }
 
-const status = () => ({ enabled: enabled(), provider: lastProvider, elevenlabs: hasEleven(), gemini: hasGemini(), voices: elevenVoices.count || null, lastError });
+const status = () => ({ enabled: enabled(), provider: lastProvider, elevenlabs: hasEleven(), gemini: hasGemini(), voices: elevenVoices.count || null,
+  builtInOnly: libraryBlocked.key === process.env.ELEVENLABS_API_KEY && Date.now() - libraryBlocked.at < 3600e3, lastError });
 
 module.exports = { synthesize, speakInChunks, clips, enabled, status };
