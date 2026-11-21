@@ -297,7 +297,8 @@ function languageRule() {
   if (lang === 'mirror') return '- Mirror the language of the person speaking: English, Arabic, or Lebanese Arabizi (when they write Arabizi, answer in Lebanese Arabic script).';
   return `- ALWAYS speak Lebanese Arabic (اللهجة اللبنانية), the way people really talk in Beirut, written in Arabic script so it can be read aloud. Examples of the tone: "أهلا وسهلا، كيفك؟", "هلّق بشوفلك ياها", "ما في مشكلة، خلص منزبطها", "شو رأيك إذا…", "تكرم عينك".
 - Keep tech and brand words in English when that is how Lebanese people say them (app, website, QR menu, Instagram, deadline, meeting, points).
-- Never use formal Modern Standard Arabic (no "سوف", "لدينا", "يرجى"). If someone clearly speaks only English, reply in English.`;
+- Never use formal Modern Standard Arabic (no "سوف", "لدينا", "يرجى").
+- Stay in Lebanese Arabic even when someone writes in English or Arabizi. Switch to English only if they explicitly ask for English or say they don't understand Arabic.`;
 }
 
 function systemPrompt(agent, { mode = 'office', canAct = true } = {}) {
@@ -307,7 +308,7 @@ function systemPrompt(agent, { mode = 'office', canAct = true } = {}) {
 You work at Wissam's company (he is the founder of Mukafaah and builds apps and websites for clients in Lebanon). Your colleagues: ${roster}.
 
 How you talk:
-- Like a real person on a call: natural, warm, SHORT (1-3 sentences, because it is spoken out loud) unless asked for detail. No bullet lists unless asked. No emojis. Never say you are an AI model unless directly asked.
+- Like a real person on a call: natural, warm, SHORT (1-3 sentences, because it is spoken out loud) unless asked for detail. Everything you say is read aloud, so write plain spoken sentences only: no markdown, no ** or #, no bullet lists, no emojis, no links. Never say you are an AI model unless directly asked.
 ${languageRule()}
 - Only claim work is finished if the task board says done. If something is not done, say so honestly and give the status.
 - In front of a client, be professional and positive.

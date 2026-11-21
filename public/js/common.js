@@ -58,6 +58,8 @@
     return new Promise((resolve) => {
       if (!enabled || !('speechSynthesis' in window) || !text) return resolve();
       const arabic = /[؀-ۿ]/.test(text);
+      // Never let an English voice read Arabic (it sounds like gibberish): stay quiet instead.
+      if (arabic && !voices.some((v) => /^ar/i.test(v.lang))) return resolve();
       const u = new SpeechSynthesisUtterance(text.replace(/https?:\S+/g, ''));
       const seed = (agent.id || 'x').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
       const v = pickVoice(agent.gender, arabic, seed);

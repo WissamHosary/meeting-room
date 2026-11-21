@@ -2,52 +2,92 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Meeting Room</title>
+<meta name="theme-color" content="#0e0716">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/skin.css">
 <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-<div id="joinScreen" class="join">
-  <form class="card" id="joinForm">
-    <h1 id="jTitle">Joining meeting…</h1>
-    <p class="sub" id="jClient" style="margin:0"></p>
-    <video id="preview" autoplay muted playsinline></video>
-    <div><label for="jName">Your name</label><input id="jName" required maxlength="40" autocomplete="name"></div>
-    <p class="sub" style="margin:0;font-size:13px">This meeting includes AI team members, and it may be recorded. You'll be told when recording starts.</p>
-    <button class="btn primary" id="joinBtn">Join now</button>
-  </form>
+<!-- Lobby: check your camera and mic, then join -->
+<div id="lobby" class="lobby">
+  <div class="lobby-card">
+    <div class="lobby-preview">
+      <span class="chip you">Preview</span>
+      <video id="preview" autoplay muted playsinline></video>
+      <div class="cam-off" id="camOff"><div class="avatar" id="lobbyAvatar" style="--c:#4b2370">?</div><span>Your camera is off</span></div>
+      <div class="mic-meter" id="micMeter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="controls-row">
+        <button type="button" class="dbtn on" id="lMic" data-tip="Microphone" aria-label="Turn microphone off"></button>
+        <button type="button" class="dbtn on" id="lCam" data-tip="Camera" aria-label="Turn camera off"></button>
+      </div>
+    </div>
+    <form class="lobby-form" id="joinForm">
+      <span class="eyebrow" id="lStatus">Ready to join</span>
+      <h1 id="lTitle">Joining meeting…</h1>
+      <div class="row"><span class="chip hidden" id="lClient"></span></div>
+      <div>
+        <label>Team in this room</label>
+        <div class="row" style="gap:14px"><div class="stack" id="lAgents"></div><span class="fine" id="lAgentsText"></span></div>
+      </div>
+      <div><label for="jName">Your name</label><input id="jName" required maxlength="40" autocomplete="name" placeholder="Type your name"></div>
+      <button class="btn primary" id="joinBtn" style="min-height:52px;font-size:16px;justify-content:center">Join meeting</button>
+      <p class="fine">This meeting includes AI team members who answer when you say their name, and it may be recorded. You'll always be told when recording starts.</p>
+    </form>
+  </div>
 </div>
 
-<div id="meet" class="meet hidden">
-  <header>
-    <div><h1 id="mTitle"></h1><span class="sub" id="mClient" style="font-size:13px"></span></div>
-    <div class="row"><span id="recBadge" class="rec hidden">Recording</span><span class="pill" id="peopleCount"></span></div>
+<!-- The meeting -->
+<div id="meet" class="meet2 hidden">
+  <header class="m-top">
+    <div class="m-title"><span class="mark" aria-hidden="true">M</span><div style="min-width:0"><h1 id="mTitle"></h1></div><span class="chip hidden" id="mClient"></span></div>
+    <div class="m-meta">
+      <span id="recBadge" class="rec-pill hidden">Recording</span>
+      <span class="timer" id="timer">00:00</span>
+      <div class="stack" id="topStack"></div>
+      <button type="button" class="btn owner-only hidden" id="inviteBtn">Invite</button>
+    </div>
   </header>
-  <div class="stage" id="stage"></div>
-  <aside class="panel">
-    <div class="tabs" role="tablist"><button class="active" role="tab" aria-selected="true">Conversation</button></div>
-    <div class="scroll" id="lines" aria-live="polite"></div>
-    <form id="chatForm"><input id="chatInput" placeholder="Type a message… mention a name to ask an agent" autocomplete="off" aria-label="Message"><button class="btn icon primary" aria-label="Send" id="chatSend"></button></form>
+  <main class="m-stage">
+    <div class="room3d" id="room3d"></div>
+    <div class="stage-fallback hidden" id="stageFallback">The 3D room couldn't load on this device. The meeting still works.</div>
+    <div class="people" id="people" aria-label="People in the call"></div>
+    <div class="subtitle" id="subtitle" dir="auto" aria-live="polite"></div>
+    <div class="dock" id="dock" role="toolbar" aria-label="Meeting controls">
+      <button type="button" class="dbtn on" id="micBtn" data-tip="Mute"></button>
+      <button type="button" class="dbtn on" id="camBtn" data-tip="Camera"></button>
+      <span class="sep"></span>
+      <button type="button" class="dbtn wide" id="handsBtn" data-tip="Agents hear you and answer when you say their name"></button>
+      <button type="button" class="dbtn wide" id="pttBtn" data-tip="Ask an agent one thing"></button>
+      <select id="lang" aria-label="Speech language"><option value="ar-LB">عربي</option><option value="en-US">EN</option></select>
+      <span class="sep"></span>
+      <button type="button" class="dbtn on" id="voiceBtn" data-tip="Agent voices"></button>
+      <button type="button" class="dbtn" id="chatToggle" data-tip="Chat & people"></button>
+      <span class="owner-only hidden" style="display:contents">
+        <button type="button" class="dbtn" id="recBtn" data-tip="Record (Karim)"></button>
+        <button type="button" class="dbtn" id="agentsBtn" data-tip="Choose agents"></button>
+        <button type="button" class="dbtn end" id="endBtn"><span>End</span></button>
+      </span>
+      <button type="button" class="dbtn end" id="leaveBtn" aria-label="Leave meeting"></button>
+    </div>
+  </main>
+  <aside class="m-side" id="side">
+    <div class="m-tabs" role="tablist">
+      <button type="button" class="active" data-tab="chat" role="tab" aria-selected="true">Conversation</button>
+      <button type="button" data-tab="people" role="tab" aria-selected="false">People</button>
+      <button type="button" class="close" id="sideClose" aria-label="Close panel">✕</button>
+    </div>
+    <div class="m-scroll" id="lines" aria-live="polite"><div class="empty-hint" id="emptyHint">The conversation shows up here.<br>Say an agent's name, like "Fadi" or "Jad", to ask them something.</div></div>
+    <div class="m-scroll hidden" id="peopleList"></div>
+    <form class="m-compose" id="chatForm"><input id="chatInput" placeholder="Message… (say a name to ask an agent)" autocomplete="off" aria-label="Message" dir="auto"><button class="btn primary icon" aria-label="Send" id="chatSend"></button></form>
   </aside>
-  <div class="controls">
-    <button class="btn round on" id="micBtn" aria-label="Microphone"></button>
-    <button class="btn round on" id="camBtn" aria-label="Camera"></button>
-    <button class="btn round on" id="voiceBtn" aria-label="Hear agents speak"></button>
-    <select id="lang" aria-label="Caption language" style="width:auto;min-height:52px"><option value="en-US">EN</option><option value="ar-LB">AR</option></select>
-    <span class="owner-only hidden row">
-      <button class="btn round" id="recBtn" aria-label="Start recording"></button>
-      <button class="btn round" id="inviteBtn" aria-label="Copy invite link"></button>
-      <button class="btn round" id="agentsBtn" aria-label="Choose agents in this meeting"></button>
-      <button class="btn danger" id="endBtn">End meeting</button>
-    </span>
-    <button class="btn danger round" id="leaveBtn" aria-label="Leave"></button>
-  </div>
 </div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module" src="/js/characters.js"></script>
+<script type="module" src="/js/meetroom3d.js"></script>
 <script src="/js/common.js"></script>
 <script src="/js/meet.js"></script>
 </body>

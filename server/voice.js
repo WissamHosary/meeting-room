@@ -19,6 +19,18 @@ setInterval(() => { const now = Date.now(); for (const [k, v] of clips) if (now 
 
 const enabled = () => !!process.env.GEMINI_API_KEY && process.env.SERVER_VOICE !== 'off';
 
+// Strip things that sound wrong when read aloud: links, hidden action tags, markdown, emojis, list bullets.
+function cleanForSpeech(text) {
+  return String(text || '')
+    .replace(/\[\[[^\]]*\]\]/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/[*_#`>~|]+/g, ' ')
+    .replace(/^\s*[-•\d]+[.)]?\s+/gm, '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // raw 16-bit PCM -> WAV so every browser can play it
 function pcmToWav(pcm, rate = 24000) {
   const h = Buffer.alloc(44);
@@ -30,9 +42,9 @@ function pcmToWav(pcm, rate = 24000) {
 
 async function synthesize(text, agentId) {
   if (!enabled() || !text) return null;
-  const arabic = /[؀-ۿ]/.test(text);
-  const spoken = text.replace(/https?:\S+/g, '').replace(/\[\[[^\]]*\]\]/g, '').slice(0, 1200);
-  const prompt = arabic ? `Say this in a natural, warm Lebanese Beiruti accent, like a friendly colleague talking: ${spoken}` : `Say this naturally and warmly, like a friendly colleague: ${spoken}`;
+  // Send ONLY the words to say (no instructions), so the voice never reads stage directions out loud.
+  const prompt = cleanForSpeech(text).slice(0, 1200);
+  if (!prompt) return null;
   const order = working ? [working, ...MODELS.filter((m) => m !== working)] : MODELS;
   for (const model of order) {
     try {
@@ -57,7 +69,7 @@ async function synthesize(text, agentId) {
 
 // Split a reply so the first sentence can start playing while the rest is still being generated.
 function chunks(text) {
-  const clean = text.replace(/https?:\S+/g, '').replace(/\[\[[^\]]*\]\]/g, '').trim();
+  const clean = cleanForSpeech(text);
   const parts = clean.split(/(?<=[.!?؟…\n])\s+/).filter((p) => p.trim());
   if (parts.length <= 1 || clean.length < 90) return [clean];
   let first = parts.shift();

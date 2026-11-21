@@ -238,6 +238,12 @@ export function makeCharacter(look) {
         ph += dt * 3.2;
         T.shLx = -ph % (Math.PI * 2); T.shRx = -(ph + Math.PI) % (Math.PI * 2); T.shLz = -0.3; T.shRz = 0.3; T.elL = -0.3; T.elR = -0.3;
         T.hipL = Math.sin(ph * 3) * 0.3; T.hipR = -Math.sin(ph * 3) * 0.3; T.torsoX = 0.25; T.headX = -0.25;
+      } else if (state === 'sit') { // seated at the meeting table, forearms resting forward
+        T.hipL = 1.5; T.hipR = 1.5; T.kneeL = 1.5; T.kneeR = 1.5; T.bob = -0.33;
+        T.shLx = -0.6; T.shRx = -0.6; T.shLz = -0.12; T.shRz = 0.12; T.elL = -0.8; T.elR = -0.8;
+        T.torsoX = 0.04 + Math.sin(clock * 1.6) * 0.01;
+        lookT -= dt; if (lookT < 0) { lookT = 2.5 + Math.random() * 4; lookY = (Math.random() - 0.5) * 0.7; lookX = (Math.random() - 0.5) * 0.15; }
+        T.headY = lookY; T.headX = lookX;
       } else if (state === 'think') {
         T.shRx = -1.25; T.shRz = 0.25; T.elR = -2.1; T.headZ = 0.12; T.headX = 0.08;
       } else { // idle: breathing, weight shift, look around
@@ -249,6 +255,7 @@ export function makeCharacter(look) {
       if (api.talking) {
         T.headX += Math.sin(clock * 7) * 0.05; T.headY *= 0.3;
         if (state === 'idle') { T.shRx = -0.55 + Math.sin(clock * 2.3) * 0.25; T.elR = -0.9 + Math.sin(clock * 3.1) * 0.3; }
+        if (state === 'sit') { T.shRx = -0.9 + Math.sin(clock * 2.3) * 0.25; T.elR = -1.2 + Math.sin(clock * 3.1) * 0.35; T.torsoX = 0.1; }
         mouthOpen.visible = true; smile.visible = false;
         mouthOpen.scale.y = 0.15 + Math.abs(Math.sin(clock * 15) * Math.sin(clock * 5.3)) * 0.85;
         brows.forEach((b) => { b.position.y = H + 0.088 + Math.max(0, Math.sin(clock * 3)) * 0.012; });

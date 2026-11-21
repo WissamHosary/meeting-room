@@ -24,8 +24,8 @@ function init(container, { onAgentClick } = {}) {
   container.appendChild(labels.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#0b1016');
-  scene.fog = new THREE.Fog('#0b1016', 45, 90);
+  scene.background = new THREE.Color('#0d0716');
+  scene.fog = new THREE.Fog('#0d0716', 45, 90);
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
 
@@ -39,7 +39,7 @@ function init(container, { onAgentClick } = {}) {
   controls.maxDistance = 55;
 
   // ---------- light ----------
-  scene.add(new THREE.HemisphereLight('#cfd9ff', '#2a2018', 0.55));
+  scene.add(new THREE.HemisphereLight('#d9c9ff', '#22122e', 0.6));
   const sun = new THREE.DirectionalLight('#ffe2b8', 1.6);
   sun.position.set(-14, 26, 12);
   sun.castShadow = true;
@@ -63,12 +63,12 @@ function init(container, { onAgentClick } = {}) {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(44, 34), M('#ffffff', { map: floorTex, roughness: 0.55 }));
   floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
   // hallway runner
-  const runner = new THREE.Mesh(new THREE.PlaneGeometry(40, 2.2), M('#3a3f47', { roughness: 0.9 })); runner.rotation.x = -Math.PI / 2; runner.position.set(0, 0.01, HALL_Z); runner.receiveShadow = true; scene.add(runner);
+  const runner = new THREE.Mesh(new THREE.PlaneGeometry(40, 2.2), M('#2c123f', { roughness: 0.9 })); runner.rotation.x = -Math.PI / 2; runner.position.set(0, 0.01, HALL_Z); runner.receiveShadow = true; scene.add(runner);
 
   // Beirut night skyline through the north windows (drawn)
   const sc = document.createElement('canvas'); sc.width = 2048; sc.height = 512;
   const s = sc.getContext('2d');
-  const sky = s.createLinearGradient(0, 0, 0, 512); sky.addColorStop(0, '#0a1020'); sky.addColorStop(1, '#3b2a2a'); s.fillStyle = sky; s.fillRect(0, 0, 2048, 512);
+  const sky = s.createLinearGradient(0, 0, 0, 512); sky.addColorStop(0, '#0b0620'); sky.addColorStop(1, '#4b2370'); s.fillStyle = sky; s.fillRect(0, 0, 2048, 512);
   s.fillStyle = '#c86b3c'; s.globalAlpha = 0.25; s.fillRect(0, 420, 2048, 92); s.globalAlpha = 1;
   for (let x = 0; x < 2048;) { const w = 40 + Math.random() * 90, h = 120 + Math.random() * 300; s.fillStyle = '#0e131c'; s.fillRect(x, 512 - h, w, h); for (let wy = 512 - h + 10; wy < 500; wy += 14) for (let wx = x + 6; wx < x + w - 6; wx += 12) if (Math.random() < 0.35) { s.fillStyle = Math.random() < 0.8 ? '#f3c97a' : '#bfe3ff'; s.fillRect(wx, wy, 5, 7); } x += w + 4; }
   const skyTex = new THREE.CanvasTexture(sc); skyTex.colorSpace = THREE.SRGBColorSpace;
