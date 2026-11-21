@@ -40,10 +40,12 @@
   let voices = [];
   const loadVoices = () => { voices = speechSynthesis.getVoices(); };
   if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-  const femaleHint = /(female|zira|aria|jenny|samantha|susan|hazel|libby|sonia|hoda|salma|zariyah|natasha|emma|michelle|ava|google uk english female|google us english)/i;
-  const maleHint = /(male|david|mark|guy|george|ryan|daniel|naayf|hamed|shakir|christopher|eric|roger|andrew|brian|google uk english male)/i;
+  const femaleHint = /(female|zira|aria|jenny|samantha|susan|hazel|libby|sonia|hoda|salma|zariyah|natasha|emma|michelle|ava|layla|laila|fatima|amany|amal|noura|rana|sana|mouna|iman|reem|google uk english female|google us english)/i;
+  const maleHint = /(male|david|mark|guy|george|ryan|daniel|naayf|hamed|shakir|rami|hamdan|omar|taim|moaz|jamal|bassel|ali|fahed|christopher|eric|roger|andrew|brian|google uk english male)/i;
   function pickVoice(gender, arabic, seed) {
-    const pool = voices.filter((v) => (arabic ? /^ar/i.test(v.lang) : /^en/i.test(v.lang)));
+    let pool = voices.filter((v) => (arabic ? /^ar/i.test(v.lang) : /^en/i.test(v.lang)));
+    // Lebanese voices first (free in Microsoft Edge: Layla and Rami, Arabic (Lebanon))
+    if (arabic && pool.some((v) => /ar-LB/i.test(v.lang) || /Leban/i.test(v.name))) pool = pool.filter((v) => /ar-LB/i.test(v.lang) || /Leban/i.test(v.name));
     if (!pool.length) return null;
     const g = pool.filter((v) => (gender === 'f' ? femaleHint.test(v.name) && !/\bmale\b/i.test(v.name.replace(/female/i, '')) : maleHint.test(v.name) && !femaleHint.test(v.name)));
     // Prefer human-sounding neural voices (free in Microsoft Edge: "... Online (Natural)")
@@ -61,7 +63,7 @@
       const v = pickVoice(agent.gender, arabic, seed);
       if (v) { u.voice = v; u.lang = v.lang; } else if (arabic) u.lang = 'ar-LB';
       u.pitch = agent.gender === 'f' ? 1.05 + (seed % 3) * 0.05 : 0.9 + (seed % 3) * 0.05;
-      u.rate = 1.02;
+      u.rate = arabic ? 0.98 : 1.02;
       u.onstart = () => speakListeners.forEach((f) => f(agent.id, true));
       u.onend = u.onerror = () => { speakListeners.forEach((f) => f(agent.id, false)); resolve(); };
       speechSynthesis.speak(u);

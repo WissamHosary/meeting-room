@@ -3,9 +3,9 @@
   const $ = (s) => document.querySelector(s);
   const meetingId = location.pathname.split('/').pop();
 
-  let meeting, TEAM = [];
+  let meeting, TEAM = [], LANG = 'lebanese';
   try {
-    [meeting, { team: TEAM }] = await Promise.all([api(`/api/meetings/${meetingId}`), api('/api/team')]);
+    [meeting, { team: TEAM, language: LANG }] = await Promise.all([api(`/api/meetings/${meetingId}`), api('/api/team')]);
   } catch (e) { $('#jTitle').textContent = /ended/i.test(e.message) ? 'This meeting has ended' : 'Meeting not found'; $('#jClient').textContent = 'Ask the host for a new invite link.'; $('#joinBtn').disabled = true; return; }
   const byId = (id) => TEAM.find((a) => a.id === id);
   const who = await api('/api/whoami').catch(() => ({ owner: false }));
@@ -34,6 +34,7 @@
     $('#mTitle').textContent = meeting.title;
     $('#mClient').textContent = meeting.clientName ? `Client: ${meeting.clientName}` : '';
     if (isOwner) document.querySelector('.owner-only').classList.remove('hidden');
+    if (LANG === 'lebanese') $('#lang').value = 'ar-LB';
     ['mic', 'cam', 'voice', 'rec', 'invite', 'agents', 'leave'].forEach((k) => { $(`#${k}Btn`).innerHTML = icons[{ mic: 'mic', cam: 'cam', voice: 'speaker', rec: 'rec', invite: 'link', agents: 'users', leave: 'phone' }[k]]; });
     $('#chatSend').innerHTML = icons.send;
 
@@ -89,6 +90,7 @@
       const el = document.createElement('div');
       el.className = `line ${l.agent ? '' : 'human'}`;
       const links = (l.links || []).slice(0, 4).map((x) => `<div><a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a></div>`).join('');
+      el.dir = 'auto';
       el.innerHTML = `<b>${esc(l.name)}</b>${l.via === 'voice' ? '<span class="v">voice</span>' : ''}: ${esc(l.text)}${links}`;
       $('#lines').appendChild(el); $('#lines').scrollTop = 1e9;
     }

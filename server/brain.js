@@ -238,6 +238,9 @@ function contextBlock({ agent, clientId, mode, meeting }) {
   const relevant = inMeeting && !clientId ? []
     : agent.manager || agent.id === 'jad' || agent.id === 'karim' ? tasksFor({ clientId }) : tasksFor({ agentId: agent.id, clientId });
   lines.push('Task board (the ONLY source of truth for work status):\n' + (relevant.length ? relevant.map((t) => `- [${t.id}] ${byId[t.agent]?.name}: "${t.title}" for ${clientName(t.client)} — ${statusWord[t.status]}`).join('\n') : '- (no tasks)'));
+  // company knowledge (Mukafaah, services, Wissam's style). In meetings only entries marked public.
+  const kb = (store.db.knowledge || []).filter((k) => !inMeeting || k.audience === 'public');
+  if (kb.length) lines.push('Company knowledge (use it, but never read it out like a document):\n' + kb.map((k) => `## ${k.title}\n${k.text}`).join('\n\n'));
   if (!inMeeting && store.db.clients.length) lines.push('Clients: ' + store.db.clients.map((c) => `${c.name}${c.notes ? ` (${c.notes})` : ''}`).join('; '));
   return lines.join('\n\n');
 }
@@ -254,6 +257,15 @@ Actions (optional, put them at the very end, each on its own line, they are hidd
 [[STATUS: id=<task id>; status=todo|doing|done]]                       -> when a status changes
 [[REMEMBER: <fact about Wissam>]]                                       -> when told to remember something`;
 
+function languageRule() {
+  const lang = process.env.AGENT_LANGUAGE || 'lebanese';
+  if (lang === 'english') return '- Always reply in clear, friendly English.';
+  if (lang === 'mirror') return '- Mirror the language of the person speaking: English, Arabic, or Lebanese Arabizi (when they write Arabizi, answer in Lebanese Arabic script).';
+  return `- ALWAYS speak Lebanese Arabic (اللهجة اللبنانية), the way people really talk in Beirut, written in Arabic script so it can be read aloud. Examples of the tone: "أهلا وسهلا، كيفك؟", "هلّق بشوفلك ياها", "ما في مشكلة، خلص منزبطها", "شو رأيك إذا…", "تكرم عينك".
+- Keep tech and brand words in English when that is how Lebanese people say them (app, website, QR menu, Instagram, deadline, meeting, points).
+- Never use formal Modern Standard Arabic (no "سوف", "لدينا", "يرجى"). If someone clearly speaks only English, reply in English.`;
+}
+
 function systemPrompt(agent, { mode = 'office', canAct = true } = {}) {
   const roster = team.map((a) => `${a.name} (${a.role}, id=${a.id})`).join(', ');
   return `${agent.persona}
@@ -262,7 +274,7 @@ You work at Wissam's company (he is the founder of Mukafaah and builds apps and 
 
 How you talk:
 - Like a real person on a call: natural, warm, short (1-4 sentences unless asked for detail). No bullet lists unless asked. No emojis. Never say you are an AI model unless directly asked.
-- Mirror the language of the person speaking: English, Arabic, or Lebanese Arabizi.
+${languageRule()}
 - Only claim work is finished if the task board says done. If something is not done, say so honestly and give the status.
 - In front of a client, be professional and positive.
 ${mode === 'meeting' ? MEETING_PRIVACY : ''}

@@ -31,7 +31,7 @@ app.get('/meet/:id', (req, res) => res.sendFile(path.join(__dirname, '..', 'publ
 const hasPhoto = (id) => fs.existsSync(path.join(__dirname, '..', 'public', 'avatars', `${id}.jpg`));
 const hasModel = (id) => fs.existsSync(path.join(__dirname, '..', 'public', 'models', `${id}.glb`));
 const teamView = () => team.map((a) => ({ look: a.look, photo: hasPhoto(a.id), model: hasModel(a.id), id: a.id, name: a.name, role: a.role, color: a.color, gender: a.gender, manager: !!a.manager, place: brain.placeOf(a), placeLabel: places[brain.placeOf(a)], aliases: a.aliases }));
-app.get('/api/team', (req, res) => res.json({ team: teamView(), places, provider: brain.provider() }));
+app.get('/api/team', (req, res) => res.json({ team: teamView(), places, provider: brain.provider(), language: process.env.AGENT_LANGUAGE || 'lebanese' }));
 // Servers that help two devices find each other (STUN) and relay audio/video when a direct
 // connection is blocked, e.g. Wi-Fi <-> mobile data (TURN). Set TURN_URLS/TURN_USERNAME/TURN_CREDENTIAL
 // to use your own (e.g. a free Metered or Cloudflare TURN account); otherwise free public relays are used.
@@ -71,12 +71,32 @@ app.get('/api/settings', owner, (req, res) => res.json(settings.view()));
 app.post('/api/settings', owner, async (req, res) => {
   const b = req.body || {};
   settings.save({ AI_PROVIDER: b.provider, GEMINI_API_KEY: b.gemini, GROQ_API_KEY: b.groq, ANTHROPIC_API_KEY: b.claude, GEMINI_MODEL: b.geminiModel,
-    CF_TURN_KEY_ID: b.cfTurnId, CF_TURN_TOKEN: b.cfTurn, METERED_DOMAIN: b.meteredDomain, METERED_API_KEY: b.metered });
+    AGENT_LANGUAGE: b.language, CF_TURN_KEY_ID: b.cfTurnId, CF_TURN_TOKEN: b.cfTurn, METERED_DOMAIN: b.meteredDomain, METERED_API_KEY: b.metered });
   iceCache.at = 0;
   io.to('office').emit('team:changed');
   res.json({ ...settings.view(), test: await brain.testBrain() });
 });
 app.post('/api/settings/test', owner, async (req, res) => res.json(await brain.testBrain()));
+
+// ---------- company knowledge (what the agents know about Mukafaah and the business) ----------
+const cleanKnowledge = (k) => ({ id: k.id || store.id('k'), title: String(k.title || '').trim().slice(0, 120), audience: k.audience === 'public' ? 'public' : 'internal', text: String(k.text || '').trim().slice(0, 4000) });
+app.get('/api/knowledge', owner, (req, res) => res.json(store.db.knowledge || []));
+app.post('/api/knowledge', owner, (req, res) => {
+  const k = cleanKnowledge(req.body || {});
+  if (!k.title || !k.text) return res.status(400).json({ error: 'title and text required' });
+  (store.db.knowledge ||= []).push(k); store.save(); res.json(k);
+});
+app.post('/api/knowledge/import', owner, (req, res) => { // bulk load; replace=true swaps the whole set
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).map(cleanKnowledge).filter((k) => k.title && k.text);
+  store.db.knowledge = req.body?.replace ? items : [...(store.db.knowledge || []), ...items];
+  store.save(); res.json({ count: store.db.knowledge.length });
+});
+app.patch('/api/knowledge/:id', owner, (req, res) => {
+  const k = (store.db.knowledge || []).find((x) => x.id === req.params.id);
+  if (!k) return res.status(404).end();
+  Object.assign(k, cleanKnowledge({ ...k, ...req.body, id: k.id })); store.save(); res.json(k);
+});
+app.delete('/api/knowledge/:id', owner, (req, res) => { store.db.knowledge = (store.db.knowledge || []).filter((k) => k.id !== req.params.id); store.save(); res.json({ ok: true }); });
 
 app.get('/api/memories', owner, (req, res) => res.json(store.db.memories));
 app.post('/api/memories', owner, (req, res) => res.json(brain.remember(String(req.body.text || ''))));

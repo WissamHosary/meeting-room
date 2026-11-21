@@ -134,6 +134,18 @@
         <button class="btn primary">Remember</button>
       </form>
       <div class="list" id="memList"></div>
+
+      <h2 style="font-family:var(--display);font-weight:500;margin:34px 0 4px">Company knowledge</h2>
+      <p class="sub">What the whole team knows about Mukafaah and your business. <b>Public</b> items can be mentioned to clients in meetings, while <b>internal</b> items stay inside the office.</p>
+      <form class="card grid" id="kbForm" style="margin-bottom:20px">
+        <div class="row" style="align-items:end">
+          <div style="flex:2;min-width:220px"><label for="kbTitle">Title</label><input id="kbTitle" required placeholder="e.g. Mukafaah pricing"></div>
+          <div style="flex:1;min-width:160px"><label for="kbAud">Who can hear it</label><select id="kbAud"><option value="internal">Internal (office only)</option><option value="public">Public (OK for clients)</option></select></div>
+        </div>
+        <div><label for="kbText">What the team should know</label><textarea id="kbText" rows="4" required></textarea></div>
+        <div><button class="btn primary">Add knowledge</button></div>
+      </form>
+      <div class="list" id="kbList"></div>
     </section>
 
     <!-- Trends -->
@@ -149,6 +161,8 @@
       <h1>Settings</h1>
       <p class="sub">Give your team a real brain. Gemini is free: get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>, paste it here and save.</p>
       <form class="card grid" id="settingsForm" style="max-width:640px">
+        <div><label for="sLanguage">Team language</label>
+          <select id="sLanguage"><option value="lebanese">Lebanese Arabic (لبناني)</option><option value="mirror">Same language as the speaker</option><option value="english">English</option></select></div>
         <div><label for="sProvider">Brain</label>
           <select id="sProvider"><option value="auto">Automatic (best key available)</option><option value="gemini">Google Gemini (free)</option><option value="groq">Groq (free)</option><option value="claude">Claude (paid)</option><option value="offline">Office brain only (no AI)</option></select></div>
         <div><label for="sGemini">Gemini API key <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Paste your free Gemini key"></div>

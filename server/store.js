@@ -21,6 +21,7 @@ const seed = {
   meetings: [],
   overrides: {},   // god-mode: agentId -> place
   settings: {},    // keys and options saved from the HQ Settings screen
+  knowledge: [],   // company knowledge every agent reads: { id, title, audience: 'public'|'internal', text }
 };
 
 let db = structuredClone(seed);

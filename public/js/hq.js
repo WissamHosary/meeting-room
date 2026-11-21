@@ -27,13 +27,14 @@
     document.querySelectorAll('.nav button').forEach((x) => x.classList.toggle('active', x === b));
     document.querySelectorAll('main > section').forEach((s) => s.classList.add('hidden'));
     $(`#view-${b.dataset.view}`).classList.remove('hidden');
-    ({ office: renderOffice, tasks: loadTasks, meetings: loadMeetings, clients: loadClients, memory: loadMemory, trends: loadFeed, settings: loadSettings })[b.dataset.view]?.();
+    ({ office: renderOffice, tasks: loadTasks, meetings: loadMeetings, clients: loadClients, memory: () => { loadMemory(); loadKnowledge(); }, trends: loadFeed, settings: loadSettings })[b.dataset.view]?.();
   }));
 
   // ---------- data ----------
   async function loadTeam() {
     const r = await api('/api/team');
     TEAM = r.team; PLACES = r.places;
+    if (!loadTeam.langSet) { $('#lang').value = r.language === 'lebanese' ? 'ar-LB' : 'en-US'; loadTeam.langSet = true; }
     $('#brainName').textContent = r.provider === 'offline' ? 'Office brain (free, no AI key)' : `AI: ${r.provider}`;
     $('#brainPill').classList.toggle('offline', r.provider === 'offline');
     renderSeats();
@@ -79,7 +80,7 @@
     const links = (m.links || []).slice(0, 6).map((l) => `<a href="${esc(l.link)}" target="_blank" rel="noopener">${esc(l.title)}</a>`).join('');
     const el = document.createElement('div');
     el.className = `msg ${mine ? 'me' : ''}`;
-    el.innerHTML = `${avatar(a)}<div class="body"><div class="who"><b>${esc(a.name)}</b>${a.role ? ` · ${esc(a.role)}` : ''}</div>${esc(m.text)}${links ? `<div class="links">${links}</div>` : ''}</div>`;
+    el.innerHTML = `${avatar(a)}<div class="body" dir="auto"><div class="who"><b>${esc(a.name)}</b>${a.role ? ` · ${esc(a.role)}` : ''}</div>${esc(m.text)}${links ? `<div class="links">${links}</div>` : ''}</div>`;
     $('#chat').appendChild(el); $('#chat').scrollTop = 1e9;
     if (say && !mine && a.id) speak(m.text, a, { enabled: voiceOn });
   }
@@ -240,6 +241,19 @@
     $('#memList').innerHTML = ms.slice().reverse().map((m) => `<div class="card item"><div>${esc(m.text)}<div class="sub" style="margin:4px 0 0;font-size:12px">${new Date(m.at).toLocaleString()}</div></div><button class="btn ghost" data-dm="${m.id}">Forget</button></div>`).join('');
     document.querySelectorAll('[data-dm]').forEach((b) => b.addEventListener('click', async () => { await api(`/api/memories/${b.dataset.dm}`, { method: 'DELETE' }); loadMemory(); }));
   }
+  async function loadKnowledge() {
+    const ks = await api('/api/knowledge');
+    $('#kbList').innerHTML = ks.map((k) => `<div class="card"><div class="item"><div style="min-width:0"><b>${esc(k.title)}</b> <span class="pill" style="margin-left:6px">${k.audience === 'public' ? 'Public' : 'Internal'}</span>
+      <div class="sub" dir="auto" style="margin:6px 0 0;white-space:pre-wrap">${esc(k.text)}</div></div>
+      <div class="row" style="flex:none"><button class="btn" data-kaud="${k.id}" data-to="${k.audience === 'public' ? 'internal' : 'public'}">${k.audience === 'public' ? 'Make internal' : 'Make public'}</button><button class="btn ghost" data-kdel="${k.id}">Delete</button></div></div></div>`).join('') || '<p class="sub">No company knowledge yet.</p>';
+    document.querySelectorAll('[data-kdel]').forEach((b) => b.addEventListener('click', async () => { if (confirm('Delete this knowledge item?')) { await api(`/api/knowledge/${b.dataset.kdel}`, { method: 'DELETE' }); loadKnowledge(); } }));
+    document.querySelectorAll('[data-kaud]').forEach((b) => b.addEventListener('click', async () => { await api(`/api/knowledge/${b.dataset.kaud}`, { method: 'PATCH', body: { audience: b.dataset.to } }); loadKnowledge(); }));
+  }
+  $('#kbForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await api('/api/knowledge', { method: 'POST', body: { title: $('#kbTitle').value, audience: $('#kbAud').value, text: $('#kbText').value } });
+    $('#kbTitle').value = $('#kbText').value = ''; loadKnowledge();
+  });
   $('#memForm').addEventListener('submit', async (e) => { e.preventDefault(); await api('/api/memories', { method: 'POST', body: { text: $('#memText').value } }); $('#memText').value = ''; loadMemory(); });
 
   // ---------- trends ----------
@@ -261,6 +275,7 @@
   async function loadSettings() {
     const s = await api('/api/settings');
     $('#sProvider').value = s.provider;
+    $('#sLanguage').value = s.language || 'lebanese';
     const now = (v, k) => (v ? `· saved ${v}${s.fromHost.includes(k) ? ' (set on server)' : ''}` : '· not set');
     $('#sCfIdNow').textContent = now(s.cfTurnId, 'CF_TURN_KEY_ID'); $('#sCfTokNow').textContent = now(s.cfTurn, 'CF_TURN_TOKEN');
     $('#sMetDomNow').textContent = s.meteredDomain ? `· ${s.meteredDomain}` : '· not set'; $('#sMetKeyNow').textContent = now(s.metered, 'METERED_API_KEY');
@@ -269,7 +284,7 @@
   $('#settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('#sResult').textContent = 'Saving and testing…';
-    const body = { provider: $('#sProvider').value };
+    const body = { provider: $('#sProvider').value, language: $('#sLanguage').value };
     for (const [k, id] of [['gemini', '#sGemini'], ['groq', '#sGroq'], ['claude', '#sClaude'], ['cfTurnId', '#sCfId'], ['cfTurn', '#sCfTok'], ['meteredDomain', '#sMetDom'], ['metered', '#sMetKey']]) if ($(id).value.trim()) body[k] = $(id).value.trim();
     try {
       const r = await api('/api/settings', { method: 'POST', body });
@@ -304,5 +319,7 @@
   MR.loadPortraits(TEAM);
   const history = await api('/api/office');
   history.forEach((m) => addMsg(m));
-  if (!history.length) addMsg({ who: 'fadi', name: 'Fadi', text: "Welcome to the office, Wissam. The whole team is here. Call anyone by name, or just tell me what you need and I'll put the right people on it." });
+  if (!history.length) addMsg({ who: 'fadi', name: 'Fadi', text: $('#lang').value === 'ar-LB'
+    ? 'أهلا فيك بالمكتب يا وسيم. كل الفريق هون. نادي أي حدا باسمو، أو قلّي شو بدّك وأنا بوزّع الشغل عالشباب.'
+    : "Welcome to the office, Wissam. The whole team is here. Call anyone by name, or just tell me what you need and I'll put the right people on it." });
 })();
