@@ -62,6 +62,8 @@ They walk, run on treadmills, swim laps, think with a hand on their chin, blink,
 
 ## Going live on Render (free)
 
+Live: https://meeting-room-6j7w.onrender.com (personal Render account, auto-deploys from `main`).
+
 `render.yaml` sets up a free web service plus a free Key-Value store, so your data survives the free server sleeping.
 1. Push this folder to a GitHub repository.
 2. In Render: **New → Blueprint**, pick the repo, and approve.
