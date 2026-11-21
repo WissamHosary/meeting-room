@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meeting Room HQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+<div id="locked" class="join hidden">
+  <div class="card">
+    <h1>Meeting Room</h1>
+    <p class="sub">This is Wissam's private HQ. Open it with the owner link printed in the server window.</p>
+    <p class="sub">Invited to a meeting? Use the meeting link you were sent.</p>
+  </div>
+</div>
+
+<div id="app" class="hq hidden">
+  <aside class="side">
+    <div class="brand">Meeting Room<small>Wissam's HQ</small></div>
+    <nav class="nav" aria-label="Sections">
+      <button data-view="boardroom" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="5"/></svg>Boardroom</button>
+      <button data-view="office"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/></svg>Living office</button>
+      <button data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></svg>Tasks</button>
+      <button data-view="meetings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/></svg>Meetings</button>
+      <button data-view="clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M14 9h1M9 13h1M14 13h1"/></svg>Clients</button>
+      <button data-view="memory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6c0 2.5 1.5 3.5 2 5h8c.5-1.5 2-2.5 2-5a6 6 0 0 0-6-6zM9 18h6M10 21h4"/></svg>Dana's memory</button>
+      <button data-view="trends"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8M14 7h7v7"/></svg>Liwaa's trends</button>
+      <button data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+    </nav>
+    <div class="foot"><span id="brainPill" class="pill"><span class="dot"></span><span id="brainName">AI</span></span></div>
+  </aside>
+
+  <main>
+    <!-- Boardroom -->
+    <section id="view-boardroom" class="boardroom">
+      <div class="world" id="world">
+        <div class="world-ui">
+          <div class="room-title"><h1>The Office</h1><p>Click someone or say their name. They'll walk to the boardroom to talk.</p></div>
+          <div class="views" role="group" aria-label="Camera">
+            <button data-cam="overview" class="active">Overview</button><button data-cam="boardroom">Boardroom</button><button data-cam="desk">Desks</button><button data-cam="coffee">Coffee</button><button data-cam="cafeteria">Cafeteria</button><button data-cam="games">Games</button><button data-cam="gym">Gym</button><button data-cam="pool">Pool</button>
+          </div>
+        </div>
+        <div class="world-loading" id="worldLoading">Bringing the team in…</div>
+      </div>
+      <div class="room hidden" id="room">
+        <svg class="skyline" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true"><path fill="#1c2531" d="M0 120V80h40V50h30v30h20V30h25v50h30V60h40v20h25V20h20v10h15v50h40V55h30v25h35V40h25v40h30V65h40v15h20V25h30v55h25V50h45v30h30V35h20v45h40V70h30v10h25V45h35v35h30V60h40v20h30V30h25v50h35V55h30v25h45V40h30v40h35v40z"/><g fill="#e3c48f" opacity=".5"><rect x="128" y="40" width="3" height="3"/><rect x="236" y="30" width="3" height="3"/><rect x="420" y="50" width="3" height="3"/><rect x="560" y="35" width="3" height="3"/><rect x="760" y="45" width="3" height="3"/><rect x="980" y="40" width="3" height="3"/><rect x="1090" y="60" width="3" height="3"/></g></svg>
+        <div class="room-title"><h1>The Boardroom</h1><p>Say a name to talk to someone. No name, and Fadi answers.</p></div>
+        <div class="table"></div>
+        <div id="seats"></div>
+      </div>
+      <div class="chat" id="chat" aria-live="polite"></div>
+      <div>
+        <div class="hint" id="hint">Try: "Fadi, assign Ziad to build the QR menu for Wing House" · "Dana, remember that I prefer dark designs" · "Liwaa, what's new in AI?"</div>
+        <form class="composer" id="composer">
+          <button type="button" class="btn icon" id="micBtn" aria-label="Talk with your voice"></button>
+          <select id="lang" aria-label="Speech language" style="width:auto"><option value="en-US">EN</option><option value="ar-LB">AR</option></select>
+          <input id="input" placeholder="Talk to your team…" autocomplete="off" aria-label="Message">
+          <button type="button" class="btn icon on" id="voiceBtn" aria-label="Team speaks out loud"></button>
+          <button class="btn primary" aria-label="Send"><span id="sendIcon"></span>Send</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Living office -->
+    <section id="view-office" class="view hidden">
+      <h1>Living office</h1>
+      <p class="sub">Where everyone is right now (Beirut time). Use god mode to move anyone, or call them to the boardroom.</p>
+      <div class="grid floors" id="floors"></div>
+      <div class="grid team-grid" id="teamCards"></div>
+    </section>
+
+    <!-- Tasks -->
+    <section id="view-tasks" class="view hidden">
+      <h1>Task board</h1>
+      <p class="sub">The single source of truth. Agents only say work is done when it is done here.</p>
+      <form class="form-row card" id="taskForm">
+        <div><label for="tTitle">Task</label><input id="tTitle" required placeholder="e.g. Build the QR menu page"></div>
+        <div><label for="tAgent">Owner</label><select id="tAgent"></select></div>
+        <div><label for="tClient">Client</label><select id="tClient"></select></div>
+        <button class="btn primary">Add task</button>
+      </form>
+      <div class="row" style="margin-bottom:14px"><label for="tFilter" style="margin:0">Show client</label><select id="tFilter" style="width:auto"></select></div>
+      <div class="grid kanban" id="kanban"></div>
+    </section>
+
+    <!-- Meetings -->
+    <section id="view-meetings" class="view hidden">
+      <h1>Meetings</h1>
+      <p class="sub">Create a room, send the link to your client, and pick which agents attend. Fadi and Karim always join. Agents stay silent until someone says their name.</p>
+      <form class="card grid" id="meetForm" style="margin-bottom:22px">
+        <div class="row" style="align-items:end">
+          <div style="flex:2;min-width:220px"><label for="mTitle">Meeting title</label><input id="mTitle" required placeholder="e.g. Wing House – website progress"></div>
+          <div style="flex:1;min-width:180px"><label for="mClient">Client</label><select id="mClient"></select></div>
+        </div>
+        <div><label>Agents attending</label><div class="picker" id="mAgents"></div></div>
+        <div><button class="btn primary">Create meeting room</button></div>
+      </form>
+      <div class="list" id="meetList"></div>
+    </section>
+
+    <!-- Clients -->
+    <section id="view-clients" class="view hidden">
+      <h1>Clients</h1>
+      <p class="sub">Agents scope their answers to the client in each meeting.</p>
+      <form class="card row" id="clientForm" style="margin-bottom:20px;align-items:end">
+        <div style="flex:1;min-width:180px"><label for="cName">Name</label><input id="cName" required></div>
+        <div style="flex:2;min-width:220px"><label for="cNotes">Notes</label><input id="cNotes" placeholder="What they need, contact person, deadline…"></div>
+        <button class="btn primary">Add client</button>
+      </form>
+      <div class="list" id="clientList"></div>
+    </section>
+
+    <!-- Memory -->
+    <section id="view-memory" class="view hidden">
+      <h1>Dana's memory</h1>
+      <p class="sub">Everything the team knows about you. Every agent reads this before they speak.</p>
+      <form class="card row" id="memForm" style="margin-bottom:20px">
+        <input id="memText" required placeholder="Something about you, your style, your rules…" style="flex:1;min-width:220px" aria-label="New memory">
+        <button class="btn primary">Remember</button>
+      </form>
+      <div class="list" id="memList"></div>
+    </section>
+
+    <!-- Trends -->
+    <section id="view-trends" class="view hidden">
+      <h1>Liwaa's trends</h1>
+      <p class="sub">Live headlines on your topics, pulled free from Google News. Ask Liwaa in the boardroom about any topic.</p>
+      <div class="row" style="margin-bottom:16px"><button class="btn" id="refreshFeed">Refresh</button></div>
+      <div class="list news" id="feed"></div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view hidden">
+      <h1>Settings</h1>
+      <p class="sub">Give your team a real brain. Gemini is free: get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>, paste it here and save.</p>
+      <form class="card grid" id="settingsForm" style="max-width:640px">
+        <div><label for="sProvider">Brain</label>
+          <select id="sProvider"><option value="auto">Automatic (best key available)</option><option value="gemini">Google Gemini (free)</option><option value="groq">Groq (free)</option><option value="claude">Claude (paid)</option><option value="offline">Office brain only (no AI)</option></select></div>
+        <div><label for="sGemini">Gemini API key <span id="sGeminiNow"></span></label><input id="sGemini" type="password" autocomplete="off" placeholder="Paste your free Gemini key"></div>
+        <div><label for="sGroq">Groq API key (optional) <span id="sGroqNow"></span></label><input id="sGroq" type="password" autocomplete="off" placeholder="Optional"></div>
+        <div><label for="sClaude">Claude API key (optional, paid) <span id="sClaudeNow"></span></label><input id="sClaude" type="password" autocomplete="off" placeholder="Later, when you're ready to pay"></div>
+        <div class="row"><button class="btn primary">Save and test</button><button type="button" class="btn" id="sTest">Test brain</button><button type="button" class="btn ghost" id="sClearGemini">Remove Gemini key</button></div>
+        <div id="sResult" class="sub" style="margin:0" aria-live="polite"></div>
+      </form>
+    </section>
+  </main>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="/js/characters.js"></script>
+<script type="module" src="/js/world.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/hq.js"></script>
+</body>
+</html>

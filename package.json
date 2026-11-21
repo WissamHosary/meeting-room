@@ -1,0 +1,20 @@
+{
+  "name": "meeting-room",
+  "version": "1.0.0",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "AI team office and meeting room",
+  "dependencies": {
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "multer": "^2.5.0",
+    "redis": "^6.3.1",
+    "socket.io": "^4.8.4"
+  }
+}

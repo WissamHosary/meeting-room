@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meeting Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+<div id="joinScreen" class="join">
+  <form class="card" id="joinForm">
+    <h1 id="jTitle">Joining meeting…</h1>
+    <p class="sub" id="jClient" style="margin:0"></p>
+    <video id="preview" autoplay muted playsinline></video>
+    <div><label for="jName">Your name</label><input id="jName" required maxlength="40" autocomplete="name"></div>
+    <p class="sub" style="margin:0;font-size:13px">This meeting includes AI team members, and it may be recorded. You'll be told when recording starts.</p>
+    <button class="btn primary" id="joinBtn">Join now</button>
+  </form>
+</div>
+
+<div id="meet" class="meet hidden">
+  <header>
+    <div><h1 id="mTitle"></h1><span class="sub" id="mClient" style="font-size:13px"></span></div>
+    <div class="row"><span id="recBadge" class="rec hidden">Recording</span><span class="pill" id="peopleCount"></span></div>
+  </header>
+  <div class="stage" id="stage"></div>
+  <aside class="panel">
+    <div class="tabs" role="tablist"><button class="active" role="tab" aria-selected="true">Conversation</button></div>
+    <div class="scroll" id="lines" aria-live="polite"></div>
+    <form id="chatForm"><input id="chatInput" placeholder="Type a message… mention a name to ask an agent" autocomplete="off" aria-label="Message"><button class="btn icon primary" aria-label="Send" id="chatSend"></button></form>
+  </aside>
+  <div class="controls">
+    <button class="btn round on" id="micBtn" aria-label="Microphone"></button>
+    <button class="btn round on" id="camBtn" aria-label="Camera"></button>
+    <button class="btn round on" id="voiceBtn" aria-label="Hear agents speak"></button>
+    <select id="lang" aria-label="Caption language" style="width:auto;min-height:52px"><option value="en-US">EN</option><option value="ar-LB">AR</option></select>
+    <span class="owner-only hidden row">
+      <button class="btn round" id="recBtn" aria-label="Start recording"></button>
+      <button class="btn round" id="inviteBtn" aria-label="Copy invite link"></button>
+      <button class="btn round" id="agentsBtn" aria-label="Choose agents in this meeting"></button>
+      <button class="btn danger" id="endBtn">End meeting</button>
+    </span>
+    <button class="btn danger round" id="leaveBtn" aria-label="Leave"></button>
+  </div>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module" src="/js/characters.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/meet.js"></script>
+</body>
+</html>
